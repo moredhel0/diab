@@ -320,6 +320,11 @@
     (dbi:disconnect connection)
     return-value))
 
+(defun has-table-p (userid)
+  (if (get-query-results "show tables like'sugar_values?'" (list userid))
+      T
+      ()))
+
 (defun week-statistics (userid max-days-offset min-days-offset)
   (if (and (numberp max-days-offset) (numberp min-days-offset))
   (get-query-results
@@ -557,7 +562,9 @@
 		 "<br><br><a href=\"?op=givepriv\">anderen Nutzern "
 		 "Rechte geben oder widerrufen</a><br>"
 		 "<a href=\"?op=changepw\">Passwort &auml;ndern</a><br>"
-		 "<a href=\"?op=deleteuser\">Benutzerkonto l&ouml;schen</a>"
+		 "<a href=\"?op=deleteuser\">Benutzerkonto l&ouml;schen</a><br>"
+		 "<a href=?op=kontakt>Kontaktdaten des Betreibers anzeigen</a>"
+		 "<br><a href=?op=terms>Nutzungsbedingungen anzeigen</a>"
 		 "<br><br>"))
     return-string))
 
@@ -566,6 +573,7 @@
 	(value-count (hunchentoot:parameter "value-count")))
     (if (not value-count) (setf value-count "30"))
     (if (string-equal value-count "") (setf value-count "30"))
+    (if (has-table-p (hunchentoot:session-value 'userid))
     (setf html-string
 	  (concatenate 'string html-string
 		       "<h3>Die letzen "
@@ -577,6 +585,11 @@
 			 (hunchentoot:session-value 'userid)
 			 (parse-integer value-count :junk-allowed t)))
 		       (get-menu-html)))
+    (setf html-string (concatenate 'string
+				    "keine Tabelle f&uuml;r Messwerte "
+				    "vorhanden. <a href=?op=maketable>Hier"
+				    "</a> klicken um eine zu erstellen."
+				    (get-menu-html))))
     (make-html-site html-string)))
 
 (defun do-user-login ()
@@ -691,11 +704,10 @@
 				 "<br><br><br>"
 				 (get-menu-html)))))
 
-(defun new-user ()
-  (make-html-site (concatenate 'string "<h2>Herzlich willkommen</h2>"
-			       "Um diesen Webservice zu nutzen, muss man"
+(defun get-conditions ()
+  (concatenate 'string "Um diesen Webservice zu nutzen, muss man"
 			       " den Nutzungsbedingungen zustimmen.<br><br>"
-			       "Die bedingungen sind folgende:<br><br>"
+			       "Die Bedingungen sind folgende:<br><br>"
 			       "1. Diese Seite erhebt speichert und "
 			       "verarbeitet personenbezogene Daten. "
 			       "Z. B. Blutzuckermesswerte und die "
@@ -716,7 +728,108 @@
 			       " Ja auch aus reiner Willk&uuml;r.<br><br>"
 			       "5. Kontaktdaten des Betreibers sind "
 			       "<a href=?op=kontakt>hier</a> zu finden."
-			       "<br><br>")))
+			       "<br><br>"
+			       "6. Wenn man dem Betreiber nicht traut, oder "
+			       "es besser kann und deswegen"
+			       "seine eigene Seite Betreiben will kann man "
+			       "das gerne tun. "
+			       "<a href=https://github.com/moredhel0/"
+			       "diab/blob/master/diab.lisp>"
+			       "Hier gibt es den Quellcode</a>.<br><br>"
+			       "7. Dem Betreiber ist klar, dass er keine "
+			       "Ahnung von Webdesign hat. Und die Seite "
+			       "deswegen h&auml;sslich ist.<br>"
+			       "Wer es besser kann, siehe 6. "
+			       "wenn sich jemand deswegen beschweren "
+			       "will siehe 4.<br><br><br>"))
+
+(defun new-user ()
+  (make-html-site (concatenate 'string "<h2>Herzlich willkommen</h2>"
+			       (get-conditions)
+			       "<form method=post action=?op=accept>"
+			       "<input type=submit value=\"Bedingungen "
+			       "akzeptieren\"></form>")))
+
+(defun get-new-user-site ()
+  (concatenate 'string "Bitte die Daten des/der neuen Benutzers/Benutzerin "
+	       "eintragen.<br><form method=post action=?op=createuser>"
+	       "<table><tr><td>Ein Nnutzername f&uuml;r den Login</td>"
+	       "<td><input type=text name=username></td></tr>"
+	       "<tr><td>E-Mail-Adresse</td><td>"
+	       "<input type=text name=mail></td></tr>"
+	       "<tr><td>Passwort</td><td>"
+	       "<input type=password name=pass></td></tr>"
+	       "<tr><td>Passwort wiederholen</td><td>"
+	       "<input type=password name=pass2></td></tr></table>"
+	       "<br>Tabelle mit Messwerten anlegen:<br>"
+	       "<input type=radio name=make value=ja>ja<br>"
+	       "<input type=radio name=make value=nein>nein<br><br>"
+	       "Einheit f&uuml;r die Blutzuckermesswerte:<br>"
+	       "<input type=radio name=bz value=mg>mg/dl<br>"
+	       "<input type=radio name=bz value=mmol>mmol/l<br><br>"
+	       "Einheit f&uuml;r die Mahlzeiten:<br>"
+	       "<input type=radio name=kh value=be>BE<br>"
+	       "<input type=radio name=kh value=khe>KHE<br>"
+	       "<input type=radio name=kh value=g>Gramm Kohlenhydrate<br><br>"
+	       "<input type=submit value=\"Neues Konto anlegen\"></form>"
+	       "<br>Hinweise f&uuml;r ein sicheres Passwort kann man "
+	       "<a href=\"https://xkcd.com/936/\">hier</a> finden.<br><br>"))
+
+(defun accepted-conditions ()
+  (make-html-site (get-new-user-site)))
+
+(defun value-submitted-p (value)
+  (and value (not (string-equal value ""))))
+
+(defun get-medi-list ()
+    )
+
+(defun create-user ()
+  (let ((new-user (hunchentoot:parameter "username"))
+	(pass1 (hunchentoot:parameter "pass"))
+	(pass2 (hunchentoot:parameter "pass2"))
+	(mail (hunchentoot:parameter "mail"))
+	(make (hunchentoot:parameter "make"))
+	(bz (hunchentoot:parameter "bz"))
+	(kh (hunchentoot:parameter "kh")))
+    (make-html-site
+     (cond
+       ((user-exists-p new-user)
+	(concatenate 'string "<h3>Nutzername nicht verf&uuml;gbar</h3>"
+		     (get-new-user-site)))
+       ((not (value-submitted-p new-user))
+	(concatenate 'string "<h3>kein Nutzername angegeben</h3>"
+		     (get-new-user-site)))
+       ((not (string= pass1 pass2))
+       (concatenate 'string "<h3>Passwort und Wiederholung sind "
+			  "verschieden</h3>"
+			  (get-new-user-site)))
+       ((not (value-submitted-p pass1))
+	(concatenate 'string "<h3>kein Passwort angegeben</h3>"
+		     (get-new-user-site)))
+       ((not (value-submitted-p mail))
+	(concatenate 'string "<h3>keine E-Mail-Adresse angegeben</h3>"
+		     (get-new-user-site)))
+       ((not (value-submitted-p make))
+	(concatenate 'string "<h3>nicht ausgew&auml;hlt, ob eigene Messwerte"
+		     " gespeichert werden sollen</h3>"
+		     (get-new-user-site)))
+       ((and (string-equal make "ja") (not (value-submitted-p bz)))
+	(concatenate 'string "<h3>Wenn eine Tabelle angelegt wird muss"
+		     " auch eine Einheit f&uuml;r den Blutzucker angegeben "
+		     "werden</h3>"
+		     (get-new-user-site)))
+       ((and (string-equal make "ja") (not (value-submitted-p kh)))
+	(concatenate 'string "<h3>Wenn eine Tabelle angelegt wird, muss "
+		     "auch eine Einheit f&uuml;r die Kohlenhydrate "
+		     "angegeben werden</h3>"
+		     (get-new-user-site)))
+       (T (add-new-user new-user mail pass1) (if (string-equal make "ja")
+						 (progn )
+						 (concatenate
+						  'string
+						  "<h3>Nutzer angelegt</h3>"
+						  (get-login-html))))))))
 
 (defun process-calls (op)
   (if (not op)
@@ -734,6 +847,8 @@
 	((string-equal op "value-interval") (value-interval))
 	((string-equal op "stat") (get-statistics-site))
 	((string-equal op "newuser") (new-user))
+	((string-equal op "accept") (accepted-conditions))
+	((string-equal op "createuser") (create-user))
 	)))
 
 (defun start-server (&optional (port 8181))
