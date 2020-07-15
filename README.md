@@ -1,2 +1,0 @@
-# diab
-Blutzuckermesswerte Webservice
