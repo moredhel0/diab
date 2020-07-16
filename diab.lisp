@@ -109,10 +109,9 @@
 		 (dbi:prepare connection
 			      "select id from users where name = ?")
 		 (list (encode username)))) :|id|))
-	(if medi
-	    (dbi:do-sql connection
-	      "create table if not exists medi? (id int primary key auto_increment, name text, unit text)"
-	      (list userid)))
+	(dbi:do-sql connection
+	  "create table if not exists medi? (id int primary key auto_increment, name text, unit text)"
+	      (list userid))
 	(dbi:do-sql connection
 	  "create table if not exists sugar_values? (id int primary key auto_increment, zeit datetime, value float, food float, remark text)"
 	  (list userid))
@@ -845,14 +844,18 @@
 				     return-string
 				     "<h3>zus&auml;tzliches Medikament "
 				     "eingeben.</h3>"
+				     "<table><tr><td>"
 				     "<form method=post action=?op=addmed>"
-				     "Name:<input type=text name=medname>"
-				     "<br>Einheit:<input type=text name=unit>"
+				     "Name:</td><td>"
+				     "<input type=text name=medname></td></tr>"
+				     "<tr><td>Einheit:</td>"
+				     "<td><input type=text name=unit></td>"
+				     "</tr></table>"
 				     "<br><input type=submit value=hinzufügen>"
 				     "</form>"))
     return-string))
 
-(defun add-med ()
+(defun add-med-site ()
   (setf (hunchentoot:session-value 'med-list)
 	(append (hunchentoot:session-value 'med-list)
 		(list (hunchentoot:parameter "medname")
@@ -906,6 +909,9 @@
 						     'bz) bz)
 						   (setf
 						    (hunchentoot:session-value
+						     'username) new-user)
+						   (setf
+						    (hunchentoot:session-value
 						     'kh) kh)
 						   (setf
 						    (hunchentoot:session-value
@@ -917,7 +923,12 @@
 						  (get-login-html))))))))
 
 (defun med-done ()
-  )
+  (create-user-tables (hunchentoot:session-value 'username)
+		      (hunchentoot:session-value 'bz)
+		      (hunchentoot:session-value 'kh)
+		      (hunchentoot:session-value 'med-list))
+  (make-html-site (concatenate 'string "<h2>Benutzer wurde angelegt</h2>"
+			       (get-login-html))))
 
 (defun process-calls (op)
   (if (not op)
@@ -937,7 +948,7 @@
 	((string-equal op "newuser") (new-user))
 	((string-equal op "accept") (accepted-conditions))
 	((string-equal op "createuser") (create-user))
-	((string-equal op "addmed") (add-med))
+	((string-equal op "addmed") (add-med-site))
 	((string-equal op "meddone") (med-done))
 	)))
 
