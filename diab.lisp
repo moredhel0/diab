@@ -19,6 +19,17 @@
   (with-open-file (in "diab.config" :direction :input)
     (read in)))
 
+(defun write-contact-data (name email address)
+  (with-open-file (out "contact.config" :direction :output
+		       :if-exists :supersede)
+    (format out "~a~%" ";this is an automatically generated file")
+    (format out "~a~%" ";do only edit it if you know what you are doing")
+    (print (list :name name :mail email :address address))))
+
+(defun read-contact-data ()
+  (with-open-file (in "contact.config" :direction :input)
+    (read in)))
+
 (defun get-connection ( settings )
   (if (getf settings :port)
       (if (getf settings :server)
@@ -514,7 +525,8 @@
 
 (defun get-menu-html ()
   (let ((return-string ""))
-    (setf return-string (concatenate 'string return-string
+    (if (has-table-p (hunchentoot:session-value 'userid))
+	(setf return-string (concatenate 'string return-string
 		  "<form action=?op=showlast method=post>"
 		  "letzte <input type=number name=value-count value=30>"
 		  "Werte <input type=submit value=anzeigen></form><br>"
@@ -545,7 +557,7 @@
 		  "bis vor"
 		  "<input type=number name=stop value=0>"
 		  "Tagen<input type=submit value=anzeigen>"
-		  "</form><br><br>"))
+		  "</form><br><br>")))
     (let ((accessibles (get-accessible-lists
 			(hunchentoot:session-value 'username))))
       (if (> (length (first accessibles)) 1)
@@ -558,9 +570,13 @@
 			       (get-username (subseq
 					      (nth i (first accessibles)) 12))
 			       " verwenden</a><br>")))))
-    (setf return-string (concatenate 'string return-string
-		 "<br><br><a href=\"?op=givepriv\">anderen Nutzern "
-		 "Rechte geben oder widerrufen</a><br>"
+    (setf return-string
+	  (concatenate 'string return-string
+		       (if (has-table-p (hunchentoot:session-value 'userid))
+			   (concatenate 'string
+					"<br><br><a href=\"?op=givepriv\">"
+					"anderen Nutzern Rechte geben oder"
+					" widerrufen</a><br>"))
 		 "<a href=\"?op=changepw\">Passwort &auml;ndern</a><br>"
 		 "<a href=\"?op=deleteuser\">Benutzerkonto l&ouml;schen</a><br>"
 		 "<a href=?op=kontakt>Kontaktdaten des Betreibers anzeigen</a>"
@@ -587,8 +603,14 @@
 		       (get-menu-html)))
     (setf html-string (concatenate 'string
 				    "keine Tabelle f&uuml;r Messwerte "
-				    "vorhanden. <a href=?op=maketable>Hier"
-				    "</a> klicken um eine zu erstellen."
+				    "vorhanden."
+				    (if (= (hunchentoot:session-value 'userid)
+					   (hunchentoot:session-value
+					    'own-userid))
+					(concatenate 'string
+						     "<a href=?op=maketable>"
+						     "Hier</a> klicken um "
+						     "eine zu erstellen.<br>"))
 				    (get-menu-html))))
     (make-html-site html-string)))
 
@@ -782,7 +804,60 @@
   (and value (not (string-equal value ""))))
 
 (defun get-medi-list ()
-    )
+  (let ((return-string "<h2>Medikamente</h2>")
+	(med-list (hunchentoot:session-value 'med-list)))
+    (setf return-string (concatenate 'string
+				     return-string
+				     "Bitte die Namen und Einheiten "
+				     "(i.E. mg, Tabletten oder &Auml;hnliches)"
+				     " eingeben.<br><br>"))
+    (if med-list
+	(progn (setf return-string (concatenate 'string return-string
+					 "bisher eingegebene Medikamente:<br>"
+					 "<table><tr><td>Name</td>"
+					 "<td>Einheit</td></tr>"))
+	       (do () ((not med-list))
+		 (setf return-string (concatenate
+				      'string
+				      return-string
+				      "<tr><td>"
+				      (get-string (first med-list))
+				      "</td><td>"
+				      (get-string (first (rest med-list)))
+				      "</td></tr>"))
+		 (setf med-list (rest (rest med-list))))
+	       (setf return-string (concatenate
+				    'string
+				    return-string
+				    "</table><br>"
+				    "<form method=post action=?op=meddone>"
+				    "<input type=submit value="
+				    "\"Diese Medikamente verwenden\">"
+				    "</form><br>")))
+	(setf return-string (concatenate 'string
+					 return-string
+					 "<form method=post "
+					 "action=?op=meddone>"
+					 "<input type=submit value=\""
+					 "ohne Medikamente Weitermachen\">"
+					 "</form><br>")))
+    (setf return-string (concatenate 'string
+				     return-string
+				     "<h3>zus&auml;tzliches Medikament "
+				     "eingeben.</h3>"
+				     "<form method=post action=?op=addmed>"
+				     "Name:<input type=text name=medname>"
+				     "<br>Einheit:<input type=text name=unit>"
+				     "<br><input type=submit value=hinzufügen>"
+				     "</form>"))
+    return-string))
+
+(defun add-med ()
+  (setf (hunchentoot:session-value 'med-list)
+	(append (hunchentoot:session-value 'med-list)
+		(list (hunchentoot:parameter "medname")
+		      (hunchentoot:parameter "unit"))))
+  (make-html-site (get-medi-list)))
 
 (defun create-user ()
   (let ((new-user (hunchentoot:parameter "username"))
@@ -825,11 +900,24 @@
 		     "angegeben werden</h3>"
 		     (get-new-user-site)))
        (T (add-new-user new-user mail pass1) (if (string-equal make "ja")
-						 (progn )
+						 (progn
+						   (setf
+						    (hunchentoot:session-value
+						     'bz) bz)
+						   (setf
+						    (hunchentoot:session-value
+						     'kh) kh)
+						   (setf
+						    (hunchentoot:session-value
+						     'med-list) ())
+						   (get-medi-list))
 						 (concatenate
 						  'string
 						  "<h3>Nutzer angelegt</h3>"
 						  (get-login-html))))))))
+
+(defun med-done ()
+  )
 
 (defun process-calls (op)
   (if (not op)
@@ -849,6 +937,8 @@
 	((string-equal op "newuser") (new-user))
 	((string-equal op "accept") (accepted-conditions))
 	((string-equal op "createuser") (create-user))
+	((string-equal op "addmed") (add-med))
+	((string-equal op "meddone") (med-done))
 	)))
 
 (defun start-server (&optional (port 8181))
