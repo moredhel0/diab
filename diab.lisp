@@ -24,7 +24,7 @@
 		       :if-exists :supersede)
     (format out "~a~%" ";this is an automatically generated file")
     (format out "~a~%" ";do only edit it if you know what you are doing")
-    (print (list :name name :mail email :address address))))
+    (print (list :name name :mail email :address address) out)))
 
 (defun read-contact-data ()
   (with-open-file (in "contact.config" :direction :input)
@@ -756,7 +756,7 @@
 			       "das gerne tun. "
 			       "<a href=https://github.com/moredhel0/"
 			       "diab/blob/master/diab.lisp>"
-			       "Hier gibt es den Quellcode</a>.<br><br>"
+			       "Hier gibt es die Software</a>.<br><br>"
 			       "7. Dem Betreiber ist klar, dass er keine "
 			       "Ahnung von Webdesign hat. Und die Seite "
 			       "deswegen h&auml;sslich ist.<br>"
@@ -930,6 +930,28 @@
   (make-html-site (concatenate 'string "<h2>Benutzer wurde angelegt</h2>"
 			       (get-login-html))))
 
+(defun terms ()
+  (make-html-site (concatenate 'string (get-conditions) (get-menu-html))))
+
+(defun kontakt ()
+  (let ((data (read-contact-data)))
+    (make-html-site (concatenate 'string
+				 "<h2>Kontaktdaten des Betreibers:</h2>"
+				 "<br><br>"
+				 (getf data :name)
+				 "<br><a href=\"mailto:"
+				 (getf data :mail)
+				 "\">"
+				 (getf data :mail)
+				 "</a><br><br>"
+				 (getf data :address)
+				 "<br><br>"
+				 (if (hunchentoot:session-value 'userid)
+				     (get-menu-html))))))
+
+(defun relogin ()
+  )
+
 (defun process-calls (op)
   (if (not op)
       (let ((in (open "diab.config" :if-does-not-exist nil)))
@@ -939,15 +961,21 @@
 	      (close in)
 	      (show-login-form))))
       (cond
+	;;;; no login needed
 	((string-equal op "login") (do-user-login))
+	((string-equal op "newuser") (new-user))
+	((string-equal op "accept") (accepted-conditions))
+	((string-equal op "createuser") (create-user))
+	((string-equal op "terms") (terms))
+	((string-equal op "kontakt") (kontakt))
+	;;;; session expired -> relogin
+	((not (hunchentoot:session-value 'userid)) (relogin))
+	;;;; login is needed
 	((string-equal op "showlast") (show-last))
 	((string-equal op "daystat") (day-profile))
 	((string-equal op "weekstat") (week-profile))
 	((string-equal op "value-interval") (value-interval))
 	((string-equal op "stat") (get-statistics-site))
-	((string-equal op "newuser") (new-user))
-	((string-equal op "accept") (accepted-conditions))
-	((string-equal op "createuser") (create-user))
 	((string-equal op "addmed") (add-med-site))
 	((string-equal op "meddone") (med-done))
 	)))
