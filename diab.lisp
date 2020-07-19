@@ -950,7 +950,9 @@
 				     (get-menu-html))))))
 
 (defun relogin ()
-  )
+  (make-html-site (concatenate 'string
+			       "<h2>Login abgelaufen</h2>"
+			       (get-login-html))))
 
 (defun process-calls (op)
   (if (not op)
