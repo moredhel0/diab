@@ -4,6 +4,7 @@
 (require 'cl-smtp)
 (require 'local-time)
 (require 'hunchentoot)
+(require 'cl-ppcre)
 
 (defun write-config (username password database
 		     &optional (port nil) (server nil))
@@ -25,6 +26,17 @@
     (format out "~a~%" ";this is an automatically generated file")
     (format out "~a~%" ";do only edit it if you know what you are doing")
     (print (list :name name :mail email :address address) out)))
+
+(defun write-own-url (url)
+  (with-open-file (out "url.config" :direction :output
+		       :if-exists :supersede)
+    (format out "~a~%" ";this is an automatically generated file")
+    (format out "~a~%" ";do only edit it if you know what you are doing")
+    (print (list :url url) out)))
+
+(defun read-own-url ()
+  (with-open-file (in "url.config" :direction :input)
+    (read in)))
 
 (defun read-contact-data ()
   (with-open-file (in "contact.config" :direction :input)
@@ -58,6 +70,11 @@
   (if encoded-string
       (cl-base64:base64-string-to-string encoded-string)
       ""))
+
+(defun is-base64-p (input-string)
+  (if (cl-ppcre:scan "^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$" input-string)
+      T
+      ()))
 
 (defun install-basic-tables ()
   (let ((connection (get-connection (read-config))))
@@ -199,7 +216,7 @@
     secret))
 
 (defun reset-password (secret new-password)
-  (let (result (connection (get-connection (read-config))))
+  (let (result (connection (get-connection (read-config))) return-string)
     (setf result
 	  (dbi:fetch
 	   (dbi:execute
@@ -216,11 +233,13 @@
 		     (ironclad:pbkdf2-hash-password-to-combined-string
 		      (ironclad:ascii-string-to-byte-array new-password)))
 		    (getf result :|username|)))
-	      (dbi:do-sql connection "delete from pwrenew where secret = ?"
-		(list secret)))
-	    "too late")
-	"no valid request")
-    (dbi:disconnect connection)))
+	      (dbi:do-sql connection "delete from pwrenew where username = ?"
+			  (list (getf result :|username|)))
+	      (setf return-string "Neues Passwort gesetzt"))
+	    (setf return-string "Kein g&uuml;ltiger Code mehr vorhanden."))
+	(setf return-string "Kein g&uuml;ltiger Code gfunden."))
+    (dbi:disconnect connection)
+    return-string))
     
 (defun change-password (username new-password)
   (let ((connection (get-connection (read-config))))
@@ -954,6 +973,72 @@
 			       "<h2>Login abgelaufen</h2>"
 			       (get-login-html))))
 
+(defun make-password-reset-html ()
+  (concatenate 'string
+	       "Hier k&ouml;nnen sie ein neues Passwort anfordern.<br>"
+	       "Bitte dafür den Nutzernamen eingeben. Es wird ein Link "
+	       "per E-Mail verschickt, mit dem ein neues Passwort gesetzt "
+	       "werden kann.<br><br>"
+	       "Wenn keine g&uuml;ltige Adresse hinterlegt ist, Pech gehabt."
+	       "<br><br>Der Link bleibt nur 5 Stunden g&uuml;ltig.<br><br>"
+	       "Bitte den Nutzernamen eingeben, um den es geht:"
+	       "<form method=\"post\" action=\"?op=dopwreset\">"
+	       "<input type=\"text\" name=\"username\">"
+	       "<input type=submit value=\"Reset anfordern\"></form>"))
+
+(defun get-mail (username)
+  (decode (getf (first (get-query-results
+			"select email from users where name=?"
+		     (list (encode username)))) :|email|)))
+
+(defun do-pw-reset ()
+  (let ((username (hunchentoot:parameter "username")) (user-mail) (code) (url))
+    (if (or (not username) (string-equal username ""))
+	(make-html-site (concatenate 'string
+				     "<h3>kein Nutzername angegeben</h3>"
+				     (make-password-reset-html)))
+	(progn
+	  (setf user-mail (get-mail username))
+	  (if (not (string-equal user-mail ""))
+	      (progn
+	      (setf url (getf (read-own-url) :url))
+	      (setf code (format () "~a" (request-password-reset username)))
+	      (send-message user-mail "Passwortanforderung"
+			    (concatenate
+			     'string
+			     "Um ein neues Passwort zu setzen, bitte "
+			     "folgenden Link anklicken."
+			     "<a href=\"" url
+			     "?op=setnewpw&code="
+			     code "\">" url "?op=setnewpw&code=" code
+			     "</a>."))))
+	  (make-html-site "E-Mail wurde verschickt")))))
+
+(defun demand-password-reset ()
+  (make-html-site
+   (concatenate 'string "<h2>Passwort vergessen</h2>"
+		(make-password-reset-html))))
+
+(defun new-pw-site ()
+  (make-html-site
+   (concatenate 'string
+		"bitte neues Passwort eingeben"
+		"<form method=post action=\"?op=doresetpw\">"
+		"<input type=hidden name=\"code\" value="
+		(hunchentoot:get-parameter "code")
+		"><input type=\"password\" name=\"newpw\">"
+		"<input type=submit value=\"Passwort setzen\">"
+		"</form>")))
+
+(defun reset-pw ()
+  (make-html-site
+   (concatenate
+    'string
+    (reset-password (hunchentoot:parameter "code")
+		    (hunchentoot:parameter "newpw"))
+    "<br><br>"
+    (get-login-html))))
+
 (defun process-calls (op)
   (if (not op)
       (let ((in (open "diab.config" :if-does-not-exist nil)))
@@ -970,6 +1055,10 @@
 	((string-equal op "createuser") (create-user))
 	((string-equal op "terms") (terms))
 	((string-equal op "kontakt") (kontakt))
+	((string-equal op "resetpw") (demand-password-reset))
+	((string-equal op "dopwreset") (do-pw-reset))
+	((string-equal op "setnewpw") (new-pw-site))
+	((string-equal op "doresetpw") (reset-pw))
 	;;;; session expired -> relogin
 	((not (hunchentoot:session-value 'userid)) (relogin))
 	;;;; login is needed
