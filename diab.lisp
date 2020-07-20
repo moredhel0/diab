@@ -398,10 +398,24 @@
   (let ((privlevel (get-max-privlevel username target-userid)))
     (or (string-equal privlevel "o") (string-equal privlevel "rw"))))
 
+(defun can-write-p ()
+  (if (= (hunchentoot:session-value 'userid)
+	 (hunchentoot:session-value 'own-userid))
+      T
+      (has-write-priv-p (get-username (hunchentoot:session-value 'own-userid))
+			(hunchentoot:session-value 'userid))))
+
 (defun has-read-priv-p (username target-userid)
   (if (get-max-privlevel username target-userid)
       T
       nil))
+
+(defun can-read-p ()
+  (if (= (hunchentoot:session-value 'userid)
+	 (hunchentoot:session-value 'own-userid))
+      T
+      (has-read-priv-p (get-username (hunchentoot:session-value 'own-userid))
+			(hunchentoot:session-value 'userid))))
 
 (defun has-owner-priv-p (username target-userid)
   (string-equal (get-max-privlevel username target-userid) "o"))
@@ -415,17 +429,13 @@
 (defun make-html-site (content)
   (setf (hunchentoot:content-type*) "text/html")
   (concatenate 'string
-	       "<!doctype html>
-<head>
-<title>Blutzuckermesswerte Webservice</title>
-<body>"
+	       "<!doctype html>"
+	       "<head><title>Blutzuckermesswerte Webservice</title>"
+	       "</head><body>"
 	       content
-	       "<br>
-<br>
-<img src=\"https://moredhel.is-a-geek.net/lisp.jpg\" alt=\"made with Lisp\">
-</img>
-</body>
-</html>"))
+	       "<br><br>"
+	       "<img src=\"https://moredhel.is-a-geek.net/lisp.jpg\" "
+	       "alt=\"made with Lisp\"></img></body></html>"))
 
 (defun do-installation ()
   )
@@ -1098,6 +1108,20 @@
 	  (concatenate 'string "Passwort ge&auml;ndert<br><br>"
 		       (get-menu-html)))))))
 
+(defun priv-error-site ()
+  (make-html-site (concatenate 'string "<h2>Fehlende berechtigungen</h2>"
+			       "<br><br>Entweder fehlen die "
+			       "Zugriffsberechtigungen, oder es "
+			       "ist ein Fehler aufgetreten.")))
+
+(defun do-delete-entry ()
+  (if (can-write-p)
+      (progn
+	(delete-entry (hunchentoot:session-value 'userid)
+		      (hunchentoot:parameter "id"))
+	(show-last))
+      (priv-error-site)))
+
 (defun process-calls (op)
   (if (not op)
       (let ((in (open "diab.config" :if-does-not-exist nil)))
@@ -1132,6 +1156,7 @@
 	((string-equal op "dodelete") (do-delete))
 	((string-equal op "changepw") (change-password-form))
 	((string-equal op "dochpw") (do-change-pw))
+	((string-equal op "delete") (do-delete-entry))
 	)))
 
 (defun start-server (&optional (port 8181))
