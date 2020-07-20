@@ -240,7 +240,7 @@
       (list userid dataset-id))
     (dbi:disconnect connection)))
 
-(defun insert-entry (userid timestamp value food remark &rest medication)
+(defun insert-entry (userid timestamp value food remark medication)
   (let ((connection (get-connection (read-config)))
 	(parameters (list userid))
 	(sql-string "insert into sugar_values? (zeit, value, food, remark"))
@@ -259,7 +259,7 @@
     (dbi:disconnect connection)))
 
 (defun change-entry
-    (userid entryid timestamp value food remark &rest medication)
+    (userid entryid timestamp value food remark  medication)
   (let ((connection (get-connection (read-config)))
 	(query-string
 	 "update sugar_values? set zeit=?, value=?, food=?, remark=?")
@@ -1122,6 +1122,52 @@
 	(show-last))
       (priv-error-site)))
 
+(defun test-string (input)
+  (if (and input (not (string= input "")))
+      input
+      nil))
+
+(defun get-med-number ()
+  (getf (first (get-query-results "select count(id) from medi?"
+				  (list (hunchentoot:session-value 'userid))))
+	:|count(id)|))
+
+(defun get-med-parameters ()
+  (let ((return-list ()) (number (get-med-number)))
+    (dotimes (i number)
+      (setf return-list
+	    (append return-list
+		    (list (test-string (hunchentoot:parameter
+			   (concatenate 'string "med"
+					(format () "~a" i))))))))
+    return-list))
+
+(defun is-date-time-p (date)
+  (if (local-time:parse-timestring date :date-time-separator #\space
+				   :fail-on-error ())
+      T
+      ()))
+
+(defun do-add-entry ()
+  (if (can-write-p)
+      (progn
+	(if (is-date-time-p (hunchentoot:parameter "time"))
+	    (progn
+	      (insert-entry
+	       (hunchentoot:session-value 'userid)
+	       (test-string (get-string (hunchentoot:parameter "time")))
+	       (test-string (get-string (hunchentoot:parameter "sugar")))
+	       (test-string (get-string (hunchentoot:parameter "food")))
+	       (hunchentoot:parameter "remark")
+	       (get-med-parameters))
+	       (show-last))
+	    (make-html-site (concatenate 'string
+					 "Die Zeitangabe war nicht im Format:"
+					 " Jahr-Monat-Tag "
+					 "Stunde:Minute:Sekunde<br><br>"
+					 (get-menu-html)))))
+      (priv-error-site)))
+
 (defun process-calls (op)
   (if (not op)
       (let ((in (open "diab.config" :if-does-not-exist nil)))
@@ -1157,6 +1203,7 @@
 	((string-equal op "changepw") (change-password-form))
 	((string-equal op "dochpw") (do-change-pw))
 	((string-equal op "delete") (do-delete-entry))
+	((string-equal op "addnew") (do-add-entry))
 	)))
 
 (defun start-server (&optional (port 8181))
