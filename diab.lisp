@@ -157,22 +157,6 @@
 	 (ironclad:ascii-string-to-byte-array password)
 	 (decode (getf pw-from-db :|password|)))
 	())))
-    
-(defun delete-user (username)
-  (let (userid (connection (get-connection (read-config))))
-    (setf userid (getf
-		  (dbi:fetch
-		   (dbi:execute
-		    (dbi:prepare connection
-				 "select id from users where name = ?" )
-		    (list (encode username))))
-		  :|id| ))
-    (dbi:do-sql connection "drop table if exists sugar_values?" (list userid))
-    (dbi:do-sql connection "drop table if exists medi?" (list userid))
-    (dbi:do-sql connection "delete from accesslevels where username = ?"
-		(list (encode username)))
-    (dbi:do-sql connection "delete from users where id = ?" (list userid))
-    (dbi:disconnect connection)))
 
 (defun write-mailconfig (smtp-server own-email username password
 			 &optional (port 25) (encryption nil))
@@ -314,6 +298,16 @@
 	      (list userid)))
 	    :|name|)))
     username))
+    
+(defun delete-user (userid)
+  (let ((connection (get-connection (read-config))) username)
+    (setf username (get-username userid))
+    (dbi:do-sql connection "drop table if exists sugar_values?" (list userid))
+    (dbi:do-sql connection "drop table if exists medi?" (list userid))
+    (dbi:do-sql connection "delete from accesslevels where username = ?"
+		(list (encode username)))
+    (dbi:do-sql connection "delete from users where id = ?" (list userid))
+    (dbi:disconnect connection)))
 
 (defun get-accessible-lists (username)
   (let ((table-list ()) (level-list ())
@@ -1039,6 +1033,23 @@
     "<br><br>"
     (get-login-html))))
 
+(defun confirm-delete ()
+  (make-html-site (concatenate
+		   'string
+		   "<h2>Ihr Konto l&ouml;schen</h2>"
+		   "<br><br>"
+		   "Wichtig!<br>Wenn das Konto gel&ouml;scht wird, "
+		   "Sind ALLE Daten UNWIEDERBRINGLICH verloren.<br>"
+		   "Es kann NICHTS wiederhergestellt werden.<br><br>"
+		   "<form method=post action=\"?op=dodelete\">"
+		   "<input type=submit value=\"verstanden trotzdem "
+		   "l&ouml;schen\"></form>")))
+
+(defun do-delete ()
+  (delete-user (hunchentoot:session-value 'own-userid))
+  (make-html-site (concatenate 'string
+			       "Konto wurde gel&ouml;scht.")))
+
 (defun process-calls (op)
   (if (not op)
       (let ((in (open "diab.config" :if-does-not-exist nil)))
@@ -1069,6 +1080,8 @@
 	((string-equal op "stat") (get-statistics-site))
 	((string-equal op "addmed") (add-med-site))
 	((string-equal op "meddone") (med-done))
+	((string-equal op "deleteuser") (confirm-delete))
+	((string-equal op "dodelete") (do-delete))
 	)))
 
 (defun start-server (&optional (port 8181))
