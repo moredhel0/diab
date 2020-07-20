@@ -225,13 +225,13 @@
     (dbi:disconnect connection)
     return-string))
     
-(defun change-password (username new-password)
+(defun change-password (userid new-password)
   (let ((connection (get-connection (read-config))))
-    (dbi:do-sql connection "update users set password = ? where name = ?"
+    (dbi:do-sql connection "update users set password = ? where id = ?"
 		(list (encode (ironclad:pbkdf2-hash-password-to-combined-string
 			       (ironclad:ascii-string-to-byte-array
 				new-password)))
-		      (encode username)))
+		      userid))
     (dbi:disconnect connection)))
 
 (defun delete-entry (userid dataset-id)
@@ -590,7 +590,8 @@
 					"anderen Nutzern Rechte geben oder"
 					" widerrufen</a><br>"))
 		 "<a href=\"?op=changepw\">Passwort &auml;ndern</a><br>"
-		 "<a href=\"?op=deleteuser\">Benutzerkonto l&ouml;schen</a><br>"
+		 "<a href=\"?op=deleteuser\">Eigenes Benutzerkonto "
+		 "l&ouml;schen</a><br>"
 		 "<a href=?op=kontakt>Kontaktdaten des Betreibers anzeigen</a>"
 		 "<br><a href=?op=terms>Nutzungsbedingungen anzeigen</a>"
 		 "<br><br>"))
@@ -1050,6 +1051,53 @@
   (make-html-site (concatenate 'string
 			       "Konto wurde gel&ouml;scht.")))
 
+(defun change-password-form-html ()
+  (concatenate 'string
+	       "<h2>Passwort &auml;ndern</h2>"
+	       "<form method=post action=\"?op=dochpw\">"
+	       "<table><tr><td>Bisheriges Passwort:</td>"
+	       "<td><input type=password name=oldpw></td></tr>"
+	       "<tr><td>neues Passwort</td><td>"
+	       "<input type=password name=newpw></td></tr>"
+	       "<tr><td>neues Passwort wiederholen</td>"
+	       "<td><input type=password name=newpw2></td>"
+	       "</tr><tr><td></td><td>"
+	       "<input type=submit value=\"neues Passwort speichern\">"
+	       "</td></tr></table></form>"
+	       "<br><br>"
+	       (get-menu-html)))
+
+(defun change-password-form ()
+  (make-html-site (change-password-form-html)))
+
+(defun do-change-pw ()
+  (let ((oldpass (hunchentoot:parameter "oldpw"))
+	(newpass (hunchentoot:parameter "newpw"))
+	(newpass2 (hunchentoot:parameter "newpw2")))
+    (make-html-site
+     (cond
+       ((not (value-submitted-p oldpass))
+	(concatenate 'string "Bisheriges Passwort nicht angegeben<br>"
+		     (change-password-form-html)))
+       ((not (string= newpass newpass2))
+	(concatenate 'string
+		     "Passwort und Wiederholung sind nicht identisch<br>"
+		     (change-password-form-html)))
+       ((not (value-submitted-p newpass))
+	(concatenate 'string "es muss ein neues Passwort angegeben werden<br>"
+		     (change-password-form-html)))
+       ((not (ironclad:pbkdf2-check-password
+	      (ironclad:ascii-string-to-byte-array oldpass)
+	      (decode (getf (first (get-query-results
+				    "select password from users where id = ?"
+				    (list (hunchentoot:session-value
+					   'own-userid)))) :|password|))))
+	(concatenate 'string "bisheriges Passwort ung&uuml;ltig"
+		     (change-password-form-html)))
+       (T (change-password (hunchentoot:session-value 'own-userid) newpass)
+	  (concatenate 'string "Passwort ge&auml;ndert<br><br>"
+		       (get-menu-html)))))))
+
 (defun process-calls (op)
   (if (not op)
       (let ((in (open "diab.config" :if-does-not-exist nil)))
@@ -1082,6 +1130,8 @@
 	((string-equal op "meddone") (med-done))
 	((string-equal op "deleteuser") (confirm-delete))
 	((string-equal op "dodelete") (do-delete))
+	((string-equal op "changepw") (change-password-form))
+	((string-equal op "dochpw") (do-change-pw))
 	)))
 
 (defun start-server (&optional (port 8181))
