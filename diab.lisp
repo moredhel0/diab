@@ -263,7 +263,7 @@
   (let ((connection (get-connection (read-config)))
 	(query-string
 	 "update sugar_values? set zeit=?, value=?, food=?, remark=?")
-	(parameters (list userid timestamp value food remark))
+	(parameters (list userid timestamp value food (encode remark)))
 	(counter 1))
     (dolist (current medication)
       (setf query-string (concatenate 'string query-string ", med?=?"))
@@ -1155,9 +1155,30 @@
 	    (progn
 	      (insert-entry
 	       (hunchentoot:session-value 'userid)
-	       (test-string (get-string (hunchentoot:parameter "time")))
-	       (test-string (get-string (hunchentoot:parameter "sugar")))
-	       (test-string (get-string (hunchentoot:parameter "food")))
+	       (test-string (hunchentoot:parameter "time"))
+	       (test-string (hunchentoot:parameter "sugar"))
+	       (test-string (hunchentoot:parameter "food"))
+	       (hunchentoot:parameter "remark")
+	       (get-med-parameters))
+	       (show-last))
+	    (make-html-site (concatenate 'string
+					 "Die Zeitangabe war nicht im Format:"
+					 " Jahr-Monat-Tag "
+					 "Stunde:Minute:Sekunde<br><br>"
+					 (get-menu-html)))))
+      (priv-error-site)))
+
+(defun do-change-entry ()
+  (if (can-write-p)
+      (progn
+	(if (is-date-time-p (hunchentoot:parameter "time"))
+	    (progn
+	      (change-entry
+	       (hunchentoot:session-value 'userid)
+	       (hunchentoot:parameter "entry")
+	       (test-string (hunchentoot:parameter "time"))
+	       (test-string (hunchentoot:parameter "sugar"))
+	       (test-string (hunchentoot:parameter "food"))
 	       (hunchentoot:parameter "remark")
 	       (get-med-parameters))
 	       (show-last))
@@ -1204,6 +1225,7 @@
 	((string-equal op "dochpw") (do-change-pw))
 	((string-equal op "delete") (do-delete-entry))
 	((string-equal op "addnew") (do-add-entry))
+	((string-equal op "change") (do-change-entry))
 	)))
 
 (defun start-server (&optional (port 8181))
