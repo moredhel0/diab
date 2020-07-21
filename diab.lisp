@@ -545,6 +545,57 @@
 		 "</form>"
 		 "</td><td></td></tr></table><br><br>")))
 
+(defun make-ro-main-table (userid values-list)
+  (let ((medi-list (get-query-results "select * from medi?" (list userid)))
+	(unitlist
+	 (get-query-results "select bz, kh from users where id = ?"
+			    (list userid)))
+	(return-string "<table><tr><td>Zeit</td><td>Messwert/"))
+    (cond
+      ((string-equal (getf (first unitlist) :|bz|) "mg")
+       (setf return-string (concatenate 'string return-string "mg/dl")))
+      ((string-equal (getf (first unitlist) :|bz|) "mmol")
+       (setf return-string (concatenate 'string return-string "mMol/L"))))
+    (setf return-string (concatenate 'string return-string
+				     "</td><td>Mahlzeit/"))
+    (cond
+      ((string-equal (getf (first unitlist) :|kh|) "be")
+       (setf return-string (concatenate 'string return-string "BE")))
+      ((string-equal (getf (first unitlist) :|kh|) "khe")
+       (setf return-string (concatenate 'string return-string "KHE")))
+      ((string-equal (getf (first unitlist) :|kh|) "g")
+       (setf return-string (concatenate 'string return-string "g"))))
+    (setf return-string (concatenate 'string return-string
+				     "</td><td>Bemerkung</td>"))
+    (dolist (current-med medi-list)
+	     (setf return-string
+		   (concatenate 'string return-string "<td>"
+				(getf current-med :|name|) "/"
+				(getf current-med :|unit|)
+				"</td>")))
+    (setf return-string
+	  (concatenate 'string return-string "</tr>"))
+    (dolist (current values-list)
+      (setf return-string
+	    (concatenate 'string return-string
+			 "<tr><td>"
+			 (get-date-string (getf current :|zeit|))
+			 "</td><td>"
+			 (get-string (getf current :|value|))
+			 "</td><td>"
+			 (get-string (getf current :|food|))
+			 "</td><td>"
+			 (decode (getf current :|remark|))
+			 "</td>"))
+        (dotimes (i (length medi-list))
+	(setf return-string (concatenate 'string return-string "<td>"
+					 (get-string (nth (+ 11 (* 2 i))
+							  current)) "</td>")))
+      (setf return-string
+	    (concatenate 'string
+			 return-string
+			 "</tr><br>")))))
+
 (defun get-menu-html ()
   (let ((return-string (concatenate 'string "Daten von Nutzer "
 				    (hunchentoot:session-value 'username)
@@ -583,7 +634,8 @@
 		  "Tagen<input type=submit value=anzeigen>"
 		  "</form><br><br>")))
     (let ((accessibles (get-accessible-lists
-			(hunchentoot:session-value 'username))))
+			(get-username (hunchentoot:session-value
+				       'own-userid)))))
       (if (> (length (first accessibles)) 1)
 	  (dotimes (i (length (first accessibles)))
 	    (setf return-string
@@ -620,11 +672,18 @@
 		       "<h3>Die letzen "
 		       value-count
 		       " Messwerte sind:</h3><br>"
-		       (make-main-table
-			(hunchentoot:session-value 'userid)
-			(get-last-values
-			 (hunchentoot:session-value 'userid)
-			 (parse-integer value-count :junk-allowed t)))
+		       (if (can-write-p)
+			   (make-main-table
+			    (hunchentoot:session-value 'userid)
+			    (get-last-values
+			     (hunchentoot:session-value 'userid)
+			     (parse-integer value-count :junk-allowed t)))
+			   (make-ro-main-table
+			    (hunchentoot:session-value 'userid)
+			    (get-last-values
+			     (hunchentoot:session-value 'userid)
+			     (parse-integer value-count :junk-allowed t)))
+			   )
 		       (get-menu-html)))
     (setf html-string (concatenate 'string
 				    "keine Tabelle f&uuml;r Messwerte "
@@ -1322,6 +1381,18 @@
   (change-priv (hunchentoot:parameter "user") (hunchentoot:parameter "level"))
   (priv-site))
 
+(defun change-view ()
+  (setf (hunchentoot:session-value 'userid)
+	(parse-integer (hunchentoot:parameter "uid") :junk-allowed t))
+  (if (can-read-p)
+      (progn (setf (hunchentoot:session-value 'username)
+		   (get-username (hunchentoot:session-value 'userid)))
+	     (main-content))
+      (progn
+	(setf (hunchentoot:session-value 'userid)
+	      (hunchentoot:session-value 'own-userid))
+	(priv-error-site))))
+
 (defun process-calls (op)
   (if (not op)
       (let ((in (open "diab.config" :if-does-not-exist nil)))
@@ -1363,6 +1434,7 @@
 	((string-equal op "newpriv") (do-add-priv))
 	((string-equal op "rmpriv") (do-del-priv))
 	((string-equal op "chpriv") (do-change-priv))
+	((string-equal op "chuser") (change-view))
 	)))
 
 (defun start-server (&optional (port 8181))
