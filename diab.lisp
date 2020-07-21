@@ -1191,28 +1191,56 @@
 					 (get-menu-html)))))
       (priv-error-site)))
 
-(defun priv-exists-p (target-username owner-id)
+(defun priv-exists-p (target-username)
   (if (get-query-results
        (concatenate 'string "select * from accesslevels where "
 		    "username=? and tablename='sugar_values?'")
-       (list (encode target-username) owner-id))
+       (list (encode target-username) (hunchentoot:session-value 'own-userid)))
       T
       nil))
 
 (defun get-foreign-accessible-lists ()
   (get-query-results
-   "select * from accesslevels where tablename='sugar_values?' and not level='o'"
+   (concatenate 'string "select * from accesslevels where "
+		"tablename='sugar_values?' and not level='o'")
    (list (hunchentoot:session-value 'own-userid))))
 
-(defun priv-site ()
-  (make-html-site (concatenate 'string (priv-html)(get-menu-html))))
+(defun add-priv (base64-encoded-username privlevel)
+  (let ((connection (get-connection (read-config))))
+    (dbi:do-sql connection (concatenate 'string "insert into accesslevels "
+					"(username, tablename,level) values "
+					"(?, 'sugar_values?', ?)")
+		(list base64-encoded-username
+		      (hunchentoot:session-value 'own-userid) privlevel))
+    (dbi:disconnect connection)))
+
+(defun revoke-priv (base64-encoded-username)
+  (let ((connection (get-connection (read-config))))
+    (dbi:do-sql connection (concatenate 'string "delete from accesslevels "
+					"where username=? and "
+					"tablename='sugar_values?'")
+		(list base64-encoded-username
+		      (hunchentoot:session-value 'own-userid)))
+    (dbi:disconnect connection)))
+
+(defun change-priv (base64-encoded-username privlevel)
+  (let ((connection (get-connection (read-config))))
+    (dbi:do-sql connection
+      (concatenate 'string "update accesslevels level=? where "
+		   "username=? and tablename='sugar_values?'")
+      (list privlevel base64-encoded-username
+	    (hunchentoot:session-value 'own-userid)))
+    (dbi:disconnect connection)))
 
 (defun priv-html ()
-  (let ((privs (get-foreign-accessible-lists)) (return-string ""))
+  (let ((privs (get-foreign-accessible-lists))
+	(return-string "<h2>Berechtigungen verwalten</h2>"))
     (if privs
+	(progn
 	(setf return-string (concatenate 'string
 					 return-string
 					 "<table>"))
+	
 	(dolist (current privs)
 	  (setf return-string (concatenate
 			       'string return-string
@@ -1236,25 +1264,59 @@
 				    "<td><input type=radio name=level"
 				    "value=\"r\" checked>lesen</td>"))
 			       "<td><input type=submit value="
-			       "\"Berechtigunen &auml;ndern\"></td>"
+			       "\"Berechtigunen &auml;ndern\"></td></form>"
 			       "<td><form method=post action=\"?op=rmpriv\">"
 			       "<input type=hidden name=user value=\""
 			       (getf current :|username|)
 			       "\"><input type=submit value=\"Berechtigungen "
-			       "l&ouml;schen\"></td></tr>"))))
+			       "l&ouml;schen\"></form></td></tr>")))
 	(setf return-string (concatenate 'string
 					 return-string
-					 "</table>"))
-    (setf return-string (concatenate 'string
+					 "</table>"))))
+	(setf return-string (concatenate 'string return-string
 	       "<br><form method=post action=\"?op=newpriv\">"
 	       "Username: <input type=text name=\"user\"> "
 	       "Welche Berechtigung soll gegeben werden?"
 	       "<input type=radio name=\"priv\" value=\"r\">nur lesen "
-	       "<input type=radio name=\"priv\" value=\"rw\">"
+	       "<input type=radio name=\"priv\" value=\"w\">"
 	       "lesen und schreiben."
 	       "<input type=submit value=\"Rechte speichern\">"
 	       "</form><br><br>"))
   return-string))
+
+(defun priv-site ()
+  (make-html-site (concatenate 'string (priv-html)(get-menu-html))))
+
+(defun do-add-priv ()
+  (let ((user (hunchentoot:parameter "user"))
+	(level (hunchentoot:parameter "priv")))
+    (cond
+      ((not (value-submitted-p level))
+       (make-html-site
+	(concatenate 'string
+		     "<h3>Kein Berechtigungslevel angegeben</h3><br>"
+		     (priv-html)(get-menu-html))))
+      ((not (value-submitted-p user))
+       (make-html-site
+	(concatenate 'string
+		     "<h3>Kein Benutzername angegeben</h3><br>"
+		     (priv-html)(get-menu-html))))
+      ((priv-exists-p user)
+	(make-html-site (concatenate
+			 'string
+			 "<h3>dieser Nutzer hat bereits Zugriffsrechte. "
+			 "Hinzuf&uuml;gen ist deswegen nicht m&ouml;glich. "
+			 "Bearbeiten geht.</h3><br>"
+			 (priv-html)(get-menu-html))))
+      ((not (user-exists-p user))
+       (make-html-site (concatenate 'string
+				    "<h3>Nutzer existiert nicht</h3><br>"
+				    (priv-html)(get-menu-html))))
+      (T (add-priv (encode user) level)(priv-site)))))
+
+(defun do-del-priv ()
+  (revoke-priv (hunchentoot:parameter "user"))
+  (priv-site))
 
 (defun process-calls (op)
   (if (not op)
@@ -1294,6 +1356,8 @@
 	((string-equal op "addnew") (do-add-entry))
 	((string-equal op "change") (do-change-entry))
 	((string-equal op "givepriv") (priv-site))
+	((string-equal op "newpriv") (do-add-priv))
+	((string-equal op "rmpriv") (do-del-priv))
 	)))
 
 (defun start-server (&optional (port 8181))
