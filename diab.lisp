@@ -1226,7 +1226,7 @@
 (defun change-priv (base64-encoded-username privlevel)
   (let ((connection (get-connection (read-config))))
     (dbi:do-sql connection
-      (concatenate 'string "update accesslevels level=? where "
+      (concatenate 'string "update accesslevels set level=? where "
 		   "username=? and tablename='sugar_values?'")
       (list privlevel base64-encoded-username
 	    (hunchentoot:session-value 'own-userid)))
@@ -1253,15 +1253,15 @@
 			       (if (string-equal (getf current :|level|) "w")
 				   (concatenate
 				    'string
-				    "<input type=radio name=level value=\"w\""
+				    "<input type=radio name=level value=\"w\" "
 				    "checked>lesen und schreiben</td>"
-				    "<td><input type=radio name=level"
+				    "<td><input type=radio name=level "
 				    "value=\"r\">lesen</td>")
 				   (concatenate
 				    'string
 				    "<input type=radio name=level value=\"w\">"
 				    "lesen und schreiben</td>"
-				    "<td><input type=radio name=level"
+				    "<td><input type=radio name=level "
 				    "value=\"r\" checked>lesen</td>"))
 			       "<td><input type=submit value="
 			       "\"Berechtigunen &auml;ndern\"></td></form>"
@@ -1318,6 +1318,10 @@
   (revoke-priv (hunchentoot:parameter "user"))
   (priv-site))
 
+(defun do-change-priv ()
+  (change-priv (hunchentoot:parameter "user") (hunchentoot:parameter "level"))
+  (priv-site))
+
 (defun process-calls (op)
   (if (not op)
       (let ((in (open "diab.config" :if-does-not-exist nil)))
@@ -1358,6 +1362,7 @@
 	((string-equal op "givepriv") (priv-site))
 	((string-equal op "newpriv") (do-add-priv))
 	((string-equal op "rmpriv") (do-del-priv))
+	((string-equal op "chpriv") (do-change-priv))
 	)))
 
 (defun start-server (&optional (port 8181))
