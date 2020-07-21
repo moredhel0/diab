@@ -546,7 +546,9 @@
 		 "</td><td></td></tr></table><br><br>")))
 
 (defun get-menu-html ()
-  (let ((return-string ""))
+  (let ((return-string (concatenate 'string "Daten von Nutzer "
+				    (hunchentoot:session-value 'username)
+				    "<br><br><br>")))
     (if (has-table-p (hunchentoot:session-value 'userid))
 	(setf return-string (concatenate 'string return-string
 		  "<form action=?op=showlast method=post>"
@@ -1189,6 +1191,71 @@
 					 (get-menu-html)))))
       (priv-error-site)))
 
+(defun priv-exists-p (target-username owner-id)
+  (if (get-query-results
+       (concatenate 'string "select * from accesslevels where "
+		    "username=? and tablename='sugar_values?'")
+       (list (encode target-username) owner-id))
+      T
+      nil))
+
+(defun get-foreign-accessible-lists ()
+  (get-query-results
+   "select * from accesslevels where tablename='sugar_values?' and not level='o'"
+   (list (hunchentoot:session-value 'own-userid))))
+
+(defun priv-site ()
+  (make-html-site (concatenate 'string (priv-html)(get-menu-html))))
+
+(defun priv-html ()
+  (let ((privs (get-foreign-accessible-lists)) (return-string ""))
+    (if privs
+	(setf return-string (concatenate 'string
+					 return-string
+					 "<table>"))
+	(dolist (current privs)
+	  (setf return-string (concatenate
+			       'string return-string
+			       "<tr><td>Nutzername: </td>"
+			       "<td>"(decode (getf current :|username|))"</td>"
+			       "<form method=post action=\"?op=chpriv\">"
+			       "<input type=hidden name=user value=\""
+			       (getf current :|username|)
+			       "\"><td>"
+			       (if (string-equal (getf current :|level|) "w")
+				   (concatenate
+				    'string
+				    "<input type=radio name=level value=\"w\""
+				    "checked>lesen und schreiben</td>"
+				    "<td><input type=radio name=level"
+				    "value=\"r\">lesen</td>")
+				   (concatenate
+				    'string
+				    "<input type=radio name=level value=\"w\">"
+				    "lesen und schreiben</td>"
+				    "<td><input type=radio name=level"
+				    "value=\"r\" checked>lesen</td>"))
+			       "<td><input type=submit value="
+			       "\"Berechtigunen &auml;ndern\"></td>"
+			       "<td><form method=post action=\"?op=rmpriv\">"
+			       "<input type=hidden name=user value=\""
+			       (getf current :|username|)
+			       "\"><input type=submit value=\"Berechtigungen "
+			       "l&ouml;schen\"></td></tr>"))))
+	(setf return-string (concatenate 'string
+					 return-string
+					 "</table>"))
+    (setf return-string (concatenate 'string
+	       "<br><form method=post action=\"?op=newpriv\">"
+	       "Username: <input type=text name=\"user\"> "
+	       "Welche Berechtigung soll gegeben werden?"
+	       "<input type=radio name=\"priv\" value=\"r\">nur lesen "
+	       "<input type=radio name=\"priv\" value=\"rw\">"
+	       "lesen und schreiben."
+	       "<input type=submit value=\"Rechte speichern\">"
+	       "</form><br><br>"))
+  return-string))
+
 (defun process-calls (op)
   (if (not op)
       (let ((in (open "diab.config" :if-does-not-exist nil)))
@@ -1226,6 +1293,7 @@
 	((string-equal op "delete") (do-delete-entry))
 	((string-equal op "addnew") (do-add-entry))
 	((string-equal op "change") (do-change-entry))
+	((string-equal op "givepriv") (priv-site))
 	)))
 
 (defun start-server (&optional (port 8181))
