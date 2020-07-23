@@ -426,6 +426,10 @@
       t
       ()))
 
+
+(defun value-submitted-p (value)
+  (and value (not (string-equal value ""))))
+
 (defun make-html-site (content)
   (setf (hunchentoot:content-type*) "text/html")
   (concatenate 'string
@@ -437,8 +441,287 @@
 	       "<img src=\"https://moredhel.is-a-geek.net/lisp.jpg\" "
 	       "alt=\"made with Lisp\"></img></body></html>"))
 
+(defun get-installation-html (text db-user db-pass db-name db-port db-server
+			      contact-name contact-mail contact-address
+			      url mail-server send-mail-address mail-username
+			      mail-pass mail-port mail-encryption)
+  (make-html-site (concatenate 'string
+			       text
+			       "<h2>Webservice einrichten</h2>"
+			       "<br><br>Wichtig, wenn die Daten nicht "
+			       "korrekt eingetragen werden, funktioniert "
+			       "der Webservice nicht. Die Daten k&ouml;nnen "
+			       "dann nur durch Bearbeiten, oder L&ouml;schen "
+			       "der .config Dateien ge&auml;ndert werden.<br>"
+			       "<br><br>"
+			       "<form method=post "
+			       "action=\"?op=initial-install\">"
+			       "<Table><tr><td>Daten zum Webserver:"
+			       "</td><td></td></tr><tr><td>"
+			       "Url der Seite eingeben</td><td>"
+			       "<input type=text name=\"url\" "
+			       (if url
+				   (concatenate 'string "value=\"" url "\""))
+			       "></td></tr><tr><td></td><td></td></tr><tr>"
+			       "<td>Kontaktdaten des Benutzers:</td><td></td>"
+			       "</tr><tr><td>Name:</td><td><input type=text "
+			       "name=\"contact-name\" "
+			       (if contact-name
+				   (concatenate 'string "value=\"" contact-name
+						"\""))
+			       "></td></tr><tr><td>E-Mail f&uuml;r die "
+			       "Kontaktseite</td><td><input type=text name="
+			       "\"contact-mail\" "
+			       (if contact-mail
+				   (concatenate 'string "value=\""
+						contact-mail
+						"\""))
+			       "></td></tr><tr><td>Zus&auml;tzliche "
+			       "Adressdaten f&uuml;r die Kontaktseite</td><td>"
+			       "<input type=text name=\"contact-address\" "
+			       (if contact-address
+				   (concatenate 'string
+						"value=\"" contact-address
+						"\""))
+			       "></td></tr><tr><td></td><td></td></tr><tr><td>"
+			       "Daten zum Mailkonto &uuml;ber das die Seite "
+			       "Nachrichten verschicken kann:</td><td></td>"
+			       "</tr><tr><td>E-Mail-Adresse</td><td><input "
+			       "type=text name=\"send-mail-address\" "
+			       (if send-mail-address
+				   (concatenate 'string
+						"value=\"" send-mail-address
+						"\""))
+			       "></td></tr><tr><td>E-Mail-Server</td><td>"
+			       "<input type=text name=\"mail-server\" "
+			       (if mail-server
+				   (concatenate 'string
+						"value=\"" mail-server "\""))
+			       "></td></tr><tr><td>Username f&uumlr den "
+			       "Mailserver</td><td><input type=text name=\""
+			       "mail-username\" "
+			       (if mail-username
+				   (concatenate 'string
+						"value=\"" mail-username "\""))
+			       "></td></tr><tr><td>Passwort</td><td>"
+			       "<input type=password name=\"mail-pass\" "
+			       (if mail-pass
+				   (concatenate 'string
+						"value=\"" mail-pass "\""))
+			       "></td></tr><tr><td>Port (optional)</td><td>"
+			       "<input type=text name=\"mail-port\" "
+			       (if mail-port
+				   (concatenate 'string "value=\""
+						mail-port
+						"\""))
+			       "></td></tr><tr><td>Verschl&uuml;sselung</td>"
+			       "<td><input type=radio name=\"mail-encryption\" "
+			       "value=\"tls\" "
+			       (if (string-equal mail-encryption "tls")
+				   "checked")
+			       ">tls<input type=radio name=\""
+			       "mail-encryption\" value=\"starttls\" "
+			       (if (string-equal mail-encryption "starttls")
+				   "checked")
+			       ">starttls"
+			       "<input type=radio name=\"mail-encryption\" "
+			       "value=\"none\" "
+			       (if (string-equal mail-encryption "none")
+				   "checked")
+			       ">keine</td></tr><tr><td></td>"
+			       "<td></td></tr>"
+			       "<tr><td>Daten f&uuml;r die Datenbankverbindung"
+			       "</td><td></td></tr><tr><td>Benutzername "
+			       "f&uuml;r die Datenbank.</td><td><input type="
+			       "text name=\"db-user\" "
+			       (if db-user
+				   (concatenate 'string
+						"value=\"" db-user "\""))
+			       "></td></tr><tr><td>Datenbankpasswort</td><td>"
+			       "<input type=password name=\"db-pass\" "
+			       (if db-pass
+				   (concatenate 'string
+						"value=\"" db-pass "\""))
+			       "></td></tr><tr><td>Datenbankname</td><td><input"
+			       " type=text name=\"db-name\" "
+			       (if db-name
+				   (concatenate 'string
+						"value=\"" db-name "\""))
+			       "></td></tr><tr><td>Port (optional)</td><td>"
+			       "<input type=text name=\"db-port\" "
+			       (if db-port
+				   (concatenate 'string
+						"value=\"" db-port "\""))
+			       "></td></tr><tr><td>Datenbankserver</td><td>"
+			       "<input type=text name=\"db-server\" value=\""
+			       (if db-server
+				   db-server
+				   "localhost")
+			       "\"></td></tr><tr><td><input type=submit "
+			       "value=\"Einrichten\"></td><td></td></tr>"
+			       "</table></form>")))
+
+(defun test-db-data ( db-name db-user db-pass db-server &optional db-port )
+  (let (connection (return-value))
+    (handler-case 
+    (progn (setf connection (if db-port
+			 (dbi:connect :mysql :database-name db-name
+				      :username db-user :password db-pass
+				      :host db-server :port db-port)
+			 (dbi:connect :mysql :database-name db-name
+				      :username db-user :password db-pass
+				      :host db-server)))
+    (if (dbi:fetch (dbi:execute (dbi:prepare connection "select 1 + 2")))
+	(setf return-value T))
+    (dbi:disconnect connection))
+      (error () ()))
+    return-value))
+
+(defun test-mail-data (mail-address mail-server mail-user mail-pass
+		       mail-encryption &optional mail-port)
+  (if mail-port
+      (write-mailconfig mail-server mail-address mail-user mail-pass mail-port
+			(if (string-equal mail-encryption "starttls")
+			    :starttls
+			    (if (string-equal mail-encryption "tls")
+				:tls)))
+      (write-mailconfig mail-server mail-address mail-user mail-pass 25
+			(if (string-equal mail-encryption "starttls")
+			    :starttls
+			    (if (string-equal mail-encryption "tls")
+				:tls))))
+  (if (handler-case (send-message mail-address "Testnachricht"
+				  "Test der E-Mail-einstellungen")
+	(error () ()))
+      T
+      ()))
+
 (defun do-installation ()
-  )
+  (get-installation-html "" () () () () () () () () () () () () () () ()))
+
+(defun do-initial-install ()
+  (let ((url (hunchentoot:parameter "url"))
+	(contact-name (hunchentoot:parameter "contact-name"))
+	(contact-mail (hunchentoot:parameter "contact-mail"))
+	(contact-address (hunchentoot:parameter "contact-address"))
+	(send-mail-address (hunchentoot:parameter "send-mail-address"))
+	(mail-server (hunchentoot:parameter "mail-server"))
+	(mail-username (hunchentoot:parameter "mail-username"))
+	(mail-pass (hunchentoot:parameter "mail-pass"))
+	(mail-port (hunchentoot:parameter "mail-port"))
+	(mail-encryption (hunchentoot:parameter "mail-encryption"))
+	(db-user (hunchentoot:parameter "db-user"))
+	(db-pass (hunchentoot:parameter "db-pass"))
+	(db-name (hunchentoot:parameter "db-name"))
+	(db-port (hunchentoot:parameter "db-port"))
+	(db-server (hunchentoot:parameter "db-server"))
+	(in (open "diab.config" :if-does-not-exist nil)))
+    (if (not in)
+    (cond
+      ((not (value-submitted-p url))
+      (get-installation-html "<h2>Url wurde nicht angegeben</h2>"
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      ((not (value-submitted-p contact-name))
+      (get-installation-html "<h2>kein Name f&uuml;r die Kontaktdaten</h2>"
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      ((not (value-submitted-p contact-mail))
+      (get-installation-html "<h2>keine E-Mail f&uuml;r Kontakdaten</h2>"
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      ((not (value-submitted-p send-mail-address))
+      (get-installation-html "<h2>E-Mail f&uuml;r Versand nicht angegeben</h2>"
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      ((not (value-submitted-p mail-server))
+      (get-installation-html "<h2>Mailserver wurde nicht angegeben</h2>"
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      ((not (value-submitted-p mail-username))
+      (get-installation-html "<h2>E-Mail Nutzername wurde nicht angegeben</h2>"
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      ((not (value-submitted-p mail-pass))
+      (get-installation-html "<h2>E-Mail-Passwort wurde nicht angegeben</h2>"
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      ((not (value-submitted-p mail-encryption))
+      (get-installation-html "<h2>keine Verschl&uuml;sselung angegeben</h2>"
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      ((not (value-submitted-p db-user))
+      (get-installation-html "<h2>kein Datenbanknutzername angegeben</h2>"
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      ((not (value-submitted-p db-pass))
+      (get-installation-html "<h2>kein Datenbankpasswort angegeben</h2>"
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      ((not (value-submitted-p db-name))
+      (get-installation-html "<h2>kein Datenbankname angegeben</h2>"
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      ((not (value-submitted-p db-server))
+      (get-installation-html "<h2>kein Datenbankserver angegeben</h2>"
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      ((not (if (value-submitted-p db-port)
+		(test-db-data db-name db-user db-pass db-server db-port)
+		(test-db-data db-name db-user db-pass db-server)))
+       (get-installation-html (concatenate 'string "<h2>Datenbankverbindung"
+					   " funktioniert nicht</h2>Bitte alle"
+					   " Daten pr&uuml;fen")
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      ((not (if (value-submitted-p mail-port)
+		(test-mail-data send-mail-address mail-server mail-username
+				mail-pass mail-encryption mail-port)
+		(test-mail-data send-mail-address mail-server mail-username
+				mail-pass mail-encryption)))
+	    (get-installation-html (concatenate 'string "<h2>E-Mail Versand"
+					   " funktioniert nicht</h2>Bitte alle"
+					   " Daten pr&uuml;fen")
+			     db-user db-pass db-name db-port db-server
+			     contact-name contact-mail contact-address url
+			     mail-server send-mail-address mail-username
+			     mail-pass mail-port mail-encryption))
+      (T (write-contact-data contact-name contact-mail contact-address)
+	 (write-own-url url)
+	 (write-config db-user db-pass db-name
+		       (if (value-submitted-p db-port) db-port nil)
+		       (if (value-submitted-p db-server) db-server nil))
+	 (install-basic-tables)
+	 (make-html-site (concatenate 'string "Installation erfolgreich<br>"
+				      "<a href=\"" url "\">hier</a> geht "
+				      "es weiter"))))
+    (close in))))
 
 (defun get-login-html ()
    "Willkommen. Um diesen Dienst zu nutzen, muss man sich anmelden.<br>
@@ -884,9 +1167,6 @@
 (defun accepted-conditions ()
   (make-html-site (get-new-user-site)))
 
-(defun value-submitted-p (value)
-  (and value (not (string-equal value ""))))
-
 (defun get-medi-list ()
   (let ((return-string "<h2>Medikamente</h2>")
 	(med-list (hunchentoot:session-value 'med-list)))
@@ -955,6 +1235,7 @@
 	(make (hunchentoot:parameter "make"))
 	(bz (hunchentoot:parameter "bz"))
 	(kh (hunchentoot:parameter "kh")))
+    (setf (hunchentoot:session-value 'username) new-user)
     (make-html-site
      (cond
        ((user-exists-p new-user)
@@ -1393,6 +1674,59 @@
 	      (hunchentoot:session-value 'own-userid))
 	(priv-error-site))))
 
+(defun text-interface ()
+  )
+
+(defun invalid-op ()
+  (make-html-site (concatenate 'string
+			       "<h2>Etwas uerwartetes ist passiert</h2>"
+			       "Unbekannte Anfrage. Bearbeitung nicht "
+			       "m&ouml;glich")))
+
+(defun make-table-html ()
+  (concatenate 'string
+	       "<h3>Tabelle Anlegen</h3>"
+	       "<form method=post action=\"?op=setunits\">"
+	       "<table><tr><td>Einheit f&uuml;r den Blutzucker:</td><td>"
+	       "<input type=radio name=\"bz\" value=\"mg\">"
+	       "mg/dl <input type=radio name=\"bz\" value=\"mol\">mmol/l</td>"
+	       "</tr><tr><td>Einheit f&uuml;r die Kohlenhydrate</td><td>"
+	       "<input type=radio name=\"be\" value=\"be\">BE "
+	       "<input type=radio name=\"be\" value=\"khe\">KHE "
+	       "<input type=radio name=\"be\" value=\"g\">Gramm</td></tr>"
+	       "<tr><td><input type=submit value=\"Einheiten festlegen\"></td>"
+	       "<td></td></tr></table></form>"
+	       (get-menu-html)))
+
+(defun make-table ()
+  (setf (hunchentoot:session-value 'med-list) ())
+  (make-html-site (make-table-html)))
+
+(defun make-med-html ()
+  (let ((return-string "<h2>Medikamente</h2>") (medlist (hunchentoot)))
+    (setf return-string (concatenate 'string return-string ""))
+    return-string))
+
+(defun set-units ()
+  (let ((be (hunchentoot:parameter "be"))(bz (hunchentoot:parameter "bz")))
+    (cond
+      ((not (value-submitted-p bz))
+       (make-html-site
+	 (concatenate 'string
+		      "Keine Einheit f&uuml;r den Blutzucker angegeben"
+		      (make-table-html))))
+      ((not (value-submitted-p be))
+       (make-html-site
+	 (concatenate 'string
+		      "Keine Einheit f&uuml;r Kohlenhydrate angegeben"
+		      (make-table-html))))
+      (T (setf (hunchentoot:session-value 'username)
+	       (get-username (hunchentoot:session-value 'own-userid)))
+	 (setf (hunchentoot:session-value 'bz) bz)
+	 (setf (hunchentoot:session-value 'kh) be)
+	 (make-html-site (get-medi-list))))))
+
+
 (defun process-calls (op)
   (if (not op)
       (let ((in (open "diab.config" :if-does-not-exist nil)))
@@ -1413,6 +1747,9 @@
 	((string-equal op "dopwreset") (do-pw-reset))
 	((string-equal op "setnewpw") (new-pw-site))
 	((string-equal op "doresetpw") (reset-pw))
+	((string-equal op "initial-install") (do-initial-install))
+	((string-equal op "addmed") (add-med-site))
+	((string-equal op "meddone") (med-done))
 	;;;; session expired -> relogin
 	((not (hunchentoot:session-value 'userid)) (relogin))
 	;;;; login is needed
@@ -1421,8 +1758,6 @@
 	((string-equal op "weekstat") (week-profile))
 	((string-equal op "value-interval") (value-interval))
 	((string-equal op "stat") (get-statistics-site))
-	((string-equal op "addmed") (add-med-site))
-	((string-equal op "meddone") (med-done))
 	((string-equal op "deleteuser") (confirm-delete))
 	((string-equal op "dodelete") (do-delete))
 	((string-equal op "changepw") (change-password-form))
@@ -1435,7 +1770,10 @@
 	((string-equal op "rmpriv") (do-del-priv))
 	((string-equal op "chpriv") (do-change-priv))
 	((string-equal op "chuser") (change-view))
-	)))
+	((string-equal op "text") (text-interface))
+	((string-equal op "maketable") (make-table))
+	((string-equal op "setunits") (set-units))
+	(T (invalid-op)))))
 
 (defun start-server (&optional (port 8181))
   (hunchentoot:define-easy-handler (diab :uri "/") (op) (process-calls op))
