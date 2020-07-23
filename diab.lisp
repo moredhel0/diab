@@ -420,12 +420,14 @@
 (defun has-owner-priv-p (username target-userid)
   (string-equal (get-max-privlevel username target-userid) "o"))
 
-(defun user-exists-p (username)
+(defun user-base64-exists-p (username)
   (if (get-query-results "select * from users where name=?"
-			 (list (encode username)))
+			 (list username))
       t
       ()))
 
+(defun user-exists-p (username)
+  (user-base64-exists-p (encode username)))
 
 (defun value-submitted-p (value)
   (and value (not (string-equal value ""))))
@@ -1674,8 +1676,38 @@
 	      (hunchentoot:session-value 'own-userid))
 	(priv-error-site))))
 
+(defun make-text-return (&rest content)
+  (setf (hunchentoot:content-type*) "text/plain")
+  (apply #'concatenate 'string content))
+
+(defun make-csv-return (&rest content)
+  (setf (hunchentoot:content-type*) "text/csv")
+  (apply #'concatenate 'string content))
+
+(defun text-create-user (user pass)
+  (cond
+    ((not (value-submitted-p (hunchentoot:parameter "email")))
+     (make-text-return "email needed"))
+    ((user-base64-exists-p user) (make-text-return "user exists"))
+    (t (add-new-user (decode user) (hunchentoot:parameter "email")
+		     (decode pass))
+       (make-text-return "ok"))))
+
 (defun text-interface ()
-  )
+  (let ((parameter (hunchentoot:parameter "do"))
+	(user (hunchentoot:parameter "username"))
+	(pass (hunchentoot:parameter "pass")))
+    (cond
+      ((not (value-submitted-p parameter)) (make-text-return "no action given"))
+      ((string-equal parameter "protocolVersion") (make-text-return
+						   "mor diab protocol version "
+						   "1.0"))
+      ((not (value-submitted-p user)) (make-text-return "username needed"))
+      ((not (value-submitted-p pass)) (make-text-return "pass needed"))
+      ((not (is-base64-p user)) (make-text-return "username not base64"))
+      ((not (is-base64-p pass)) (make-text-return "pass not base64"))
+      ((string-equal parameter "createUser") (text-create-user user pass))
+      (T (make-text-return "unknown action")))))
 
 (defun invalid-op ()
   (make-html-site (concatenate 'string
@@ -1750,6 +1782,7 @@
 	((string-equal op "initial-install") (do-initial-install))
 	((string-equal op "addmed") (add-med-site))
 	((string-equal op "meddone") (med-done))
+	((string-equal op "text") (text-interface))
 	;;;; session expired -> relogin
 	((not (hunchentoot:session-value 'userid)) (relogin))
 	;;;; login is needed
@@ -1770,7 +1803,6 @@
 	((string-equal op "rmpriv") (do-del-priv))
 	((string-equal op "chpriv") (do-change-priv))
 	((string-equal op "chuser") (change-view))
-	((string-equal op "text") (text-interface))
 	((string-equal op "maketable") (make-table))
 	((string-equal op "setunits") (set-units))
 	(T (invalid-op)))))
