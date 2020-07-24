@@ -1533,13 +1533,17 @@
 					 (get-menu-html)))))
       (priv-error-site)))
 
-(defun priv-exists-p (target-username)
+(defun priv-exists-base64-p (target-username own-userid)
   (if (get-query-results
        (concatenate 'string "select * from accesslevels where "
 		    "username=? and tablename='sugar_values?'")
-       (list (encode target-username) (hunchentoot:session-value 'own-userid)))
+       (list target-username own-userid))
       T
       nil))
+
+(defun priv-exists-p (target-username)
+  (priv-exists-base64-p (encode target-username)
+			(hunchentoot:session-value 'own-userid)))
 
 (defun get-foreign-accessible-lists ()
   (get-query-results
@@ -1724,6 +1728,29 @@
 	 (create-user-tables (decode username) sugar-unit food-unit medlist)
 	 (make-text-return "ok")))))
 
+(defun text-give-priv (user)
+  (let ((target-user (hunchentoot:parameter "targetUser"))
+	(priv-level (hunchentoot:parameter "privLevel")))
+    (cond
+      ((not (value-submitted-p target-user)) (make-text-return "user needed"))
+      ((not (is-base64-p target-user))
+       (make-text-return "TargetUser not base 64"))
+      ((not (user-base64-exists-p target-user))
+       (make-text-return "unknown user"))
+      ((not (value-submitted-p priv-level))
+       (make-text-return "no privilege level given"))
+      ((not (or (string-equal priv-level "r") (string-equal priv-level "rw")))
+       (make-text-return "unknown privilege level"))
+      (T (setf (hunchentoot:session-value 'own-userid)
+	       (get-userid-base64 user))
+	 (if (priv-exists-base64-p target-user (get-userid-base64 user))
+	     (change-priv target-user
+			  (if (string-equal priv-level "rw") "w" "r"))
+	     (add-priv target-user
+		       (if (string-equal priv-level "rw") "w" "r")))
+	     (make-text-return "ok")))
+    ))
+
 (defun text-interface ()
   (let ((parameter (hunchentoot:parameter "do"))
 	(user (hunchentoot:parameter "username"))
@@ -1743,6 +1770,7 @@
        (make-text-return "login incorrect"))
       ((string-equal parameter "deleteUser") (text-delete-user user))
       ((string-equal parameter "createTable") (text-add-table user))
+      ((string-equal parameter "givePriv") (text-give-priv user))
       (T (make-text-return "unknown action")))))
 
 (defun invalid-op ()
