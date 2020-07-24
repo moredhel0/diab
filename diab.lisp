@@ -1676,13 +1676,9 @@
 	      (hunchentoot:session-value 'own-userid))
 	(priv-error-site))))
 
-(defun make-text-return (&rest content)
+(defun make-text-return (content)
   (setf (hunchentoot:content-type*) "text/plain")
-  (apply #'concatenate 'string content))
-
-(defun make-csv-return (&rest content)
-  (setf (hunchentoot:content-type*) "text/csv")
-  (apply #'concatenate 'string content))
+  content)
 
 (defun text-create-user (user pass)
   (cond
@@ -1692,6 +1688,41 @@
     (t (add-new-user (decode user) (hunchentoot:parameter "email")
 		     (decode pass))
        (make-text-return "ok"))))
+
+(defun get-userid-base64 (username)
+  (getf (first (get-query-results "select id from users where name=?"
+				  (list username))) :|id|))
+
+(defun text-delete-user (username)
+  (delete-user (get-userid-base64 username))
+  (make-text-return "ok"))
+
+(defun text-add-table (username)
+  (let ((sugar-unit (hunchentoot:parameter "sugarUnit"))
+	(food-unit (hunchentoot:parameter "foodUnit"))
+	(medlist nil))
+    (cond
+      ((not (value-submitted-p sugar-unit))
+       (make-text-return "sugar unit needed"))
+      ((not (or (string-equal sugar-unit "mmol")
+		(string-equal sugar-unit "mg")))
+       (make-text-return "unknown sugar unit"))
+      ((not (value-submitted-p food-unit))
+       (make-text-return "food unit needed"))
+      ((not (or (string-equal food-unit "be")
+		(string-equal food-unit "khe")
+		(string-equal food-unit "g")))
+       (make-text-return "unknown food unit"))
+      (t (do
+       ((i 1 (1+ i)))
+       ((not (value-submitted-p (hunchentoot:parameter (format () "med~a" i)))))
+	   (setf medlist (append medlist (list
+					  (hunchentoot:parameter
+					   (format () "med~a" i))
+					  (hunchentoot:parameter
+					   (format () "medunit~a" i))))))
+	 (create-user-tables (decode username) sugar-unit food-unit medlist)
+	 (make-text-return "ok")))))
 
 (defun text-interface ()
   (let ((parameter (hunchentoot:parameter "do"))
@@ -1707,6 +1738,11 @@
       ((not (is-base64-p user)) (make-text-return "username not base64"))
       ((not (is-base64-p pass)) (make-text-return "pass not base64"))
       ((string-equal parameter "createUser") (text-create-user user pass))
+      ;;;;login needed
+      ((not (login-valid-p (decode user) (decode pass)))
+       (make-text-return "login incorrect"))
+      ((string-equal parameter "deleteUser") (text-delete-user user))
+      ((string-equal parameter "createTable") (text-add-table user))
       (T (make-text-return "unknown action")))))
 
 (defun invalid-op ()
