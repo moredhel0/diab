@@ -104,13 +104,13 @@
   (let (medid (connection (get-connection (read-config))))
     (dbi:do-sql connection
       "insert into medi? (name, unit) values ( ?, ? )"
-      (list userid medname medunit))
+      (list userid (encode medname) (encode medunit)))
     (setf medid (getf
 		 (dbi:fetch
 		  (dbi:execute
 		   (dbi:prepare connection
 			"select id from medi? where name = ? and unit = ?")
-		   (list userid medname medunit))) :|id|))
+		   (list userid (encode medname) (encode medunit)))) :|id|))
     (dbi:do-sql connection
       "alter table sugar_values? add column med? float"
       (list userid medid))
@@ -381,18 +381,21 @@
    (list userid number-of-values))
   ()))
 
-(defun get-max-privlevel (username target-userid)
+(defun get-max-privlevel-base64 (username target-userid)
   (let ((sql-string "select * from accesslevels where username = ? and tablename = 'sugar_values?' and level = ?"))
     (if (get-query-results
-	 sql-string (list (encode username) target-userid "o"))
+	 sql-string (list username target-userid "o"))
 	"o"
 	(if (get-query-results
-	     sql-string (list (encode username) target-userid "w"))
+	     sql-string (list username target-userid "w"))
 	    "rw"
 	    (if (get-query-results
-		 sql-string (list (encode username) target-userid "r"))
+		 sql-string (list username target-userid "r"))
 		"r"
 		nil)))))
+
+(defun get-max-privlevel (username target-userid)
+  (get-max-privlevel-base64 (encode username) target-userid))
 
 (defun has-write-priv-p (username target-userid)
   (let ((privlevel (get-max-privlevel username target-userid)))
@@ -404,6 +407,11 @@
       T
       (has-write-priv-p (get-username (hunchentoot:session-value 'own-userid))
 			(hunchentoot:session-value 'userid))))
+
+(defun has-read-priv-base64-p (username target-userid)
+  (if (get-max-privlevel-base64 username target-userid)
+      T
+      nil))
 
 (defun has-read-priv-p (username target-userid)
   (if (get-max-privlevel username target-userid)
@@ -755,6 +763,9 @@
 	 (get-query-results "select bz, kh from users where id = ?"
 			    (list userid)))
 	(return-string "<table><tr><td>Zeit</td><td>Messwert/"))
+    (dolist (current medi-list)
+      (setf (getf current :|name|) (decode (getf current :|name|)))
+      (setf (getf current :|unit|) (decode (getf current :|unit|))))
     (cond
       ((string-equal (getf (first unitlist) :|bz|) "mg")
        (setf return-string (concatenate 'string return-string "mg/dl")))
@@ -836,6 +847,9 @@
 	 (get-query-results "select bz, kh from users where id = ?"
 			    (list userid)))
 	(return-string "<table><tr><td>Zeit</td><td>Messwert/"))
+    (dolist (current medi-list)
+      (setf (getf current :|name|) (decode (getf current :|name|)))
+      (setf (getf current :|unit|) (decode (getf current :|unit|))))
     (cond
       ((string-equal (getf (first unitlist) :|bz|) "mg")
        (setf return-string (concatenate 'string return-string "mg/dl")))
@@ -1748,8 +1762,23 @@
 			  (if (string-equal priv-level "rw") "w" "r"))
 	     (add-priv target-user
 		       (if (string-equal priv-level "rw") "w" "r")))
-	     (make-text-return "ok")))
-    ))
+	 (make-text-return "ok")))))
+
+(defun med-def-text (user)
+  (let ((target-user (hunchentoot:parameter "targetUser")))
+    (cond
+      ((not (value-submitted-p target-user))
+       (make-text-return "no target user given"))
+      ((not (is-base64-p target-user))
+       (make-text-return "target user is not base 64"))
+      ((not (has-read-priv-base64-p user (get-userid-base64 target-user)))
+       (make-text-return
+	"target user does not exist or insufficent privileges"))
+      (T (make-text-return
+	  (let ((med-list (get-query-results "select * from medi?"
+					 (list
+					  (get-userid-base64 target-user)))))
+	    (format () "~{~{~*~a; ~*~a; ~*~a~%~}~}" med-list)))))))
 
 (defun text-interface ()
   (let ((parameter (hunchentoot:parameter "do"))
@@ -1757,9 +1786,8 @@
 	(pass (hunchentoot:parameter "pass")))
     (cond
       ((not (value-submitted-p parameter)) (make-text-return "no action given"))
-      ((string-equal parameter "protocolVersion") (make-text-return
-						   "mor diab protocol version "
-						   "1.0"))
+      ((string-equal parameter "protocolVersion")
+       (make-text-return "mor diab protocol version 1.0"))
       ((not (value-submitted-p user)) (make-text-return "username needed"))
       ((not (value-submitted-p pass)) (make-text-return "pass needed"))
       ((not (is-base64-p user)) (make-text-return "username not base64"))
@@ -1771,6 +1799,7 @@
       ((string-equal parameter "deleteUser") (text-delete-user user))
       ((string-equal parameter "createTable") (text-add-table user))
       ((string-equal parameter "givePriv") (text-give-priv user))
+      ((string-equal parameter "getMediDef") (med-def-text user))
       (T (make-text-return "unknown action")))))
 
 (defun invalid-op ()
@@ -1797,11 +1826,6 @@
 (defun make-table ()
   (setf (hunchentoot:session-value 'med-list) ())
   (make-html-site (make-table-html)))
-
-(defun make-med-html ()
-  (let ((return-string "<h2>Medikamente</h2>") (medlist (hunchentoot)))
-    (setf return-string (concatenate 'string return-string ""))
-    return-string))
 
 (defun set-units ()
   (let ((be (hunchentoot:parameter "be"))(bz (hunchentoot:parameter "bz")))
