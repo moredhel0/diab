@@ -2154,3 +2154,4 @@
    (hunchentoot:start (make-instance 'hunchentoot:easy-acceptor
 				     :port port)))
 
+(start-server)
