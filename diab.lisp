@@ -261,12 +261,12 @@
 (defun insert-entry (userid timestamp value food remark medication)
   (insert-entry-text userid timestamp value food (encode remark) medication))
 
-(defun change-entry
+(defun change-entry-text
     (userid entryid timestamp value food remark  medication)
   (let ((connection (get-connection (read-config)))
 	(query-string
 	 "update sugar_values? set zeit=?, value=?, food=?, remark=?")
-	(parameters (list userid timestamp value food (encode remark)))
+	(parameters (list userid timestamp value food remark))
 	(counter 1))
     (dolist (current medication)
       (setf query-string (concatenate 'string query-string ", med?=?"))
@@ -276,6 +276,10 @@
     (setf parameters (append parameters (list entryid)))
     (dbi:do-sql connection query-string parameters)
     (dbi:disconnect connection)))
+
+(defun change-entry (userid entryid timestamp value food remark  medication)
+  (change-entry-text userid entryid timestamp value food
+		     (encode remark) medication))
 
 (defun get-userid ( username )
   (let ((connection (get-connection (read-config))) userid)
@@ -1592,13 +1596,12 @@
 		      (hunchentoot:session-value 'own-userid) privlevel))
     (dbi:disconnect connection)))
 
-(defun revoke-priv (base64-encoded-username)
+(defun revoke-priv (base64-encoded-username own-userid)
   (let ((connection (get-connection (read-config))))
     (dbi:do-sql connection (concatenate 'string "delete from accesslevels "
 					"where username=? and "
 					"tablename='sugar_values?'")
-		(list base64-encoded-username
-		      (hunchentoot:session-value 'own-userid)))
+		(list base64-encoded-username own-userid))
     (dbi:disconnect connection)))
 
 (defun change-priv (base64-encoded-username privlevel)
@@ -1693,7 +1696,8 @@
       (T (add-priv (encode user) level)(priv-site)))))
 
 (defun do-del-priv ()
-  (revoke-priv (hunchentoot:parameter "user"))
+  (revoke-priv (hunchentoot:parameter "user")
+	       (hunchentoot:session-value 'own-userid))
   (priv-site))
 
 (defun do-change-priv ()
@@ -1866,19 +1870,21 @@
 	(food (hunchentoot:parameter "food"))
 	(comment (hunchentoot:parameter "comment"))
 	(medlist ()) (medi-error-id nil) (userid nil) (collision-id nil))
-    (setf userid (get-userid-base64 target-user))
-    (setf collision-id (check-collision userid value date))
-    (dotimes (i (get-med-number-text (get-userid-base64 target-user)))
-      (setf medlist
-	    (append medlist
+    (handler-case
+	(progn
+	  (setf userid (get-userid-base64 target-user))
+          (setf collision-id (check-collision userid value date))
+	  (dotimes (i (get-med-number-text (get-userid-base64 target-user)))
+	    (setf medlist
+		  (append medlist
 		    (list (hunchentoot:parameter
 			   (format () "medi~a" (+ 1 i))))))
-      (if (and (value-submitted-p
+	    (if (and (value-submitted-p
 		(hunchentoot:parameter
 		 (format () "medi~a" (+ 1 i))))
 	       (not (test-number
 		     (hunchentoot:parameter (format () "medi~a" (+ 1 i))))))
-	  (setf medi-error-id (+ 1 i))))
+		(setf medi-error-id (+ 1 i))))) (error () ()))
     (cond
       (medi-error-id (make-text-return
 			(format () "medi~a not a number" medi-error-id)))
@@ -1945,6 +1951,79 @@
       (t (delete-entry (get-userid-base64 target-user) id)
 	 (make-text-return "ok")))))
 
+(defun text-remove-priv (user)
+  (let ((target-user (hunchentoot:parameter "targetUser")))
+    (cond
+      ((not (value-submitted-p target-user)) (make-text-return "user needed"))
+      ((not (is-base64-p target-user))
+       (make-text-return "name of user is not base 64"))
+      ((not (get-query-results "select id from users where name = ?"
+			      (list target-user)))
+       (make-text-return "unknown user"))
+      (t (revoke-priv target-user (get-userid-base64 user))
+	 (make-text-return "ok")))))
+
+(defun text-change-value (user)
+  (let ((target-user (hunchentoot:parameter "targetUser"))
+	(date (hunchentoot:parameter "date"))
+	(value (hunchentoot:parameter "value"))
+	(food (hunchentoot:parameter "food"))
+	(comment (hunchentoot:parameter "comment"))
+	(id (hunchentoot:parameter "id"))
+	(medlist ()) (medi-error-id nil) (userid nil) (collision-id nil))
+    (handler-case
+	(progn
+	  (setf userid (get-userid-base64 target-user))
+          (setf collision-id (check-collision userid value date))
+	  (dotimes (i (get-med-number-text (get-userid-base64 target-user)))
+	    (setf medlist
+		  (append medlist
+		    (list (hunchentoot:parameter
+			   (format () "medi~a" (+ 1 i))))))
+	    (if (and (value-submitted-p
+		(hunchentoot:parameter
+		 (format () "medi~a" (+ 1 i))))
+	       (not (test-number
+		     (hunchentoot:parameter (format () "medi~a" (+ 1 i))))))
+		(setf medi-error-id (+ 1 i))))) (error () ()))
+    (cond
+      (medi-error-id (make-text-return
+			(format () "medi~a not a number" medi-error-id)))
+      ((not (value-submitted-p target-user))
+       (make-text-return "no-target-user-given"))
+      ((not (is-base64-p target-user))
+       (make-text-return "target user is not base 64"))
+      ((not (has-read-priv-base64-p user userid))
+       (make-text-return
+	"target user does not exist or insufficent privileges"))
+      ((not (value-submitted-p date)) (make-text-return "no date given"))
+      ((not (is-date-time-p date))
+       (make-text-return "date is not in correct format yyyy-mm-dd [hh:mm:ss]"))
+      ((and (value-submitted-p value) (not (test-number value)))
+       (make-text-return "value is not a number"))
+      ((and (value-submitted-p food) (not (test-number food)))
+       (make-text-return "food is not a number"))
+      ((not (value-submitted-p id))
+       (make-text-return "no id given or id is not a number"))
+      ((not (test-number id))
+       (make-text-return "no id given or is is not a number"))
+      ((not (get-query-results "select * from sugar_values? where id=?"
+			       (list userid id)))
+       (make-text-return "unknown id"))
+      ((not (is-base64-p comment)) (make-text-return "comment is not base 64"))
+      (T (change-entry-text (get-userid-base64 target-user) id
+		       date value food comment medlist)
+	 (make-text-return "ok")))))
+
+(defun text-list-privs (user)
+  (let ((data (get-query-results
+     "select username, level from accesslevels where tablename='sugar_values?'"
+     (list (get-userid-base64 user)))))
+    (dolist (current data)
+      (if (string-equal (getf current :|level|) "w")
+	  (setf (getf current :|level|) "rw")))
+    (make-text-return (format () "~{~{~*~a~^; ~}~%~}" data))))
+
 (defun text-interface ()
   (let ((parameter (hunchentoot:parameter "do"))
 	(user (hunchentoot:parameter "username"))
@@ -1972,6 +2051,9 @@
       ((string-equal parameter "forceInsert") (text-insert user ()))
       ((string-equal parameter "getOne") (get-one user))
       ((string-equal parameter "deleteOne") (text-delete user))
+      ((string-equal parameter "removePriv") (text-remove-priv user))
+      ((string-equal parameter "givenPrivs") (text-list-privs user))
+      ((string-equal parameter "changeValue") (text-change-value user))
       (T (make-text-return "unknown action")))))
 
 (defun invalid-op ()
