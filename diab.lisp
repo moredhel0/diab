@@ -1798,7 +1798,7 @@
 	"target user does not exist or insufficent privileges"))
       (T (make-text-return
 	  (format ()
-		  "~{~{~*~a; ~*~a; ~*~a~%~}~}"
+		  "~{~{~*~a; ~*~a; ~*~a~}~^~%~}~%"
 		  (get-query-results
 		   "select * from medi?"
 		   (list (get-userid-base64 target-user)))))))))
@@ -1839,7 +1839,7 @@
        (make-text-return "date is not in correct format yyyy-mm-dd [hh:mm:ss]"))
       (T (make-text-return
 	  (format ()
-		  "~{~{~*~,2f~^; ~}~^~%~}"
+		  "~{~{~*~,2f~^; ~}~^~%~}~%"
 		  (get-values-after (get-userid-base64 target-user) date)))))))
 
 (defun text-get-privs (user)
@@ -2022,7 +2022,7 @@
     (dolist (current data)
       (if (string-equal (getf current :|level|) "w")
 	  (setf (getf current :|level|) "rw")))
-    (make-text-return (format () "~{~{~*~a~^; ~}~%~}" data))))
+    (make-text-return (format () "~{~{~*~a~^; ~}~^~%~}~%" data))))
 
 (defun text-interface ()
   (let ((parameter (hunchentoot:parameter "do"))
