@@ -2026,7 +2026,7 @@
 
 (defun text-interface ()
   (let ((parameter (hunchentoot:parameter "do"))
-	(user (hunchentoot:parameter "username"))
+	(user (hunchentoot:parameter "name"))
 	(pass (hunchentoot:parameter "pass")))
     (cond
       ((not (value-submitted-p parameter)) (make-text-return "no action given"))
