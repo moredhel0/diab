@@ -87,7 +87,8 @@
   (let ((connection (get-connection (read-config))))
     (ironclad:pbkdf2-hash-password
 		       (ironclad:ascii-string-to-byte-array password))
-    (dbi:do-sql connection "insert into users (name, password, email) values ( ?, ?, ?)"
+    (dbi:do-sql connection
+      "insert into users (name, password, email) values ( ?, ?, ?)"
 		(list (encode username)
 		      (encode
 		       (ironclad:pbkdf2-hash-password-to-combined-string
@@ -743,6 +744,10 @@
     (close in))))
 
 (defun get-login-html ()
+  (if (hunchentoot:session-value 'own-userid)
+      (progn
+	(setf (hunchentoot:session-value 'own-userid) nil)
+	(setf (hunchentoot:session-value 'userid) nil)))
    "Willkommen. Um diesen Dienst zu nutzen, muss man sich anmelden.<br>
 <br>
 <form action=\"?op=login\" method=post>
