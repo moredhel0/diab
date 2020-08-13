@@ -769,7 +769,12 @@
       ""))
 
 (defun show-login-form ()
-  (make-html-site (get-login-html)))
+  (make-html-site (concatenate 'string
+			       "Dieser Webdienst dient dazu, "
+			       "Blutzuckermesswerte, Medikamente und "
+			       "Kommentare zu speichern.<br>"
+			       "Die Nutzung ist kostenlos.<br><br><br>"
+			       (get-login-html))))
 
 (defun make-main-table (userid values-list)
   (let ((medi-list (get-query-results "select * from medi?" (list userid)))
