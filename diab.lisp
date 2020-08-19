@@ -453,7 +453,7 @@
 (defun make-html-site (content)
   (setf (hunchentoot:content-type*) "text/html")
   (concatenate 'string
-	       "<!doctype html>"
+	       "<!doctype html><html>"
 	       "<head><title>Blutzuckermesswerte Webservice</title>"
 	       "</head><body>"
 	       content
