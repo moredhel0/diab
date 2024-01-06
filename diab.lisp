@@ -1511,18 +1511,28 @@
   (getf (first (get-query-results "select count(id) from medi?" (list userid)))
 	:|count(id)|))
 
+(defun only-number (input)
+  (if (= (length input) 0)
+      T
+      (test-number input)))
+
 (defun get-med-number ()
   (get-med-number-text (hunchentoot:session-value 'userid)))
 
 (defun get-med-parameters ()
-  (let ((return-list ()) (number (get-med-number)))
+  (let ((return-list ()) (number (get-med-number)) (is-number T))
     (dotimes (i number)
       (setf return-list
 	    (append return-list
 		    (list (test-string (hunchentoot:parameter
 			   (concatenate 'string "med"
-					(format () "~a" i))))))))
-    return-list))
+					(format () "~a" i)))))))
+      (setf is-number (and is-number (only-number (hunchentoot:parameter
+			   (concatenate 'string "med" (format () "~a" i)))))))
+      (if is-number
+	  return-list
+	  NIL
+	  )))
 
 (defun is-date-time-p (date)
   (if (local-time:parse-timestring date :date-time-separator #\space
@@ -1534,6 +1544,9 @@
   (if (can-write-p)
       (progn
 	(if (is-date-time-p (hunchentoot:parameter "time"))
+	    (if (only-number (hunchentoot:parameter "sugar"))
+	    (if (only-number (hunchentoot:parameter "food"))
+	    (if (get-med-parameters)	    
 	    (progn
 	      (insert-entry
 	       (hunchentoot:session-value 'userid)
@@ -1542,18 +1555,36 @@
 	       (test-string (hunchentoot:parameter "food"))
 	       (hunchentoot:parameter "remark")
 	       (get-med-parameters))
-	       (show-last))
+	      (show-last))
+	    (make-html-site (concatenate 'string
+					"eines der Medikamente ist keine Zahl"
+					"</br>"
+					"</br>"
+				       (main-content))))
+	    (make-html-site (concatenate 'string "Mahlzeit ist keine Zahl"
+					"</br>"
+					"</br>"
+					 (main-content))))
+	    (make-html-site (concatenate 'string "Zucker ist keine Zahl"
+					"</br>"
+					"</br>"
+					 (main-content))))
 	    (make-html-site (concatenate 'string
 					 "Die Zeitangabe war nicht im Format:"
 					 " Jahr-Monat-Tag "
 					 "Stunde:Minute:Sekunde<br><br>"
-					 (get-menu-html)))))
+					"</br>"
+					"</br>"
+					 (main-content)))))
       (priv-error-site)))
 
 (defun do-change-entry ()
   (if (can-write-p)
       (progn
 	(if (is-date-time-p (hunchentoot:parameter "time"))
+	(if (only-number (hunchentoot:parameter "sugar"))
+	(if (only-number (hunchentoot:parameter "food"))
+	(if (get-med-parameters)	
 	    (progn
 	      (change-entry
 	       (hunchentoot:session-value 'userid)
@@ -1563,12 +1594,25 @@
 	       (test-string (hunchentoot:parameter "food"))
 	       (hunchentoot:parameter "remark")
 	       (get-med-parameters))
-	       (show-last))
+	      (show-last))
+	    (make-html-site (concatenate 'string
+				       "eines der Medikamente ist keine Zahl"
+					"</br>"
+					"</br>"
+				       (main-content))))
+	    (make-html-site (concatenate 'string "Mahlzeit ist keine Zahl"
+					"</br>"
+					"</br>"
+					 (main-content))))
+	    (make-html-site (concatenate 'string "Zucker ist keine Zahl"
+					"</br>"
+					"</br>"
+					 (main-content))))	
 	    (make-html-site (concatenate 'string
 					 "Die Zeitangabe war nicht im Format:"
 					 " Jahr-Monat-Tag "
 					 "Stunde:Minute:Sekunde<br><br>"
-					 (get-menu-html)))))
+					 (main-content)))))
       (priv-error-site)))
 
 (defun priv-exists-base64-p (target-username own-userid)
